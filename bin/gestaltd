@@ -1,0 +1,290 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 asuramaya and Gestalt contributors
+"""
+gestaltd — hands-free pointer daemon.
+
+Head/face pose moves an on-screen cursor overlay; hand-pinch gestures click.
+Runs as the user inside the graphical session (needs the webcam, /dev/uinput,
+and an XWayland overlay — none of which require root).
+
+Pipeline (each stage is a module under gestalt/, grounded in cited HCI work —
+see docs/POINTING.md):
+
+    camera ─► input (MediaPipe head pose ─► 1€ filter)
+           ─► pointing (DynaSpot speed-scaled magnetism ─► velocity-gated pull
+                        ─► KTM arrival ─► Steady-Clicks commit gate)
+           ─► gesture (pinch detect ─► bindings ─► uinput inject)
+           ─► overlay (XWayland click-through cursor)
+       targets/ providers (atspi, cv) stream candidate boxes the pointer snaps to.
+
+Status : $XDG_RUNTIME_DIR/gestalt/status.json   (pill polls)
+Control: $XDG_RUNTIME_DIR/gestalt/control.sock  (pill writes line-JSON)
+Config : $XDG_CONFIG_HOME/gestalt/config.json   (hot-reloadable)
+"""
+from __future__ import annotations
+
+import json
+import os
+import signal
+import sys
+import threading
+import time
+import traceback
+
+# Allow running straight from the source tree (bin/ next to gestalt/).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from gestalt import health, ipc  # noqa: E402
+from gestalt.config import sanitize_config  # noqa: E402
+
+
+def config_path() -> str:
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "gestalt", "config.json")
+
+
+def load_config() -> dict:
+    try:
+        with open(config_path()) as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        raw = {}
+    return sanitize_config(raw)
+
+
+def save_config(cfg: dict) -> None:
+    path = config_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, path)
+
+
+class Daemon:
+    def __init__(self):
+        self.cfg = load_config()
+        # `gestaltd --diag` (or GESTALT_DIAG=1) opens the diagnostics window at
+        # launch — the standalone/dev path has no pill to toggle it from.
+        if "--diag" in sys.argv or os.environ.get("GESTALT_DIAG") == "1":
+            self.cfg["diag"] = True
+        self.running = True
+        self.frame = None              # last FrameResult from the engine
+        self.fps = 0.0
+        self._last_layout = 0.0        # last display-layout re-query (catch monitor changes)
+        self.ever_tracked = False      # have we ever seen a face? (searching vs lost)
+        # Heavy modules (camera/MediaPipe/overlay) are imported lazily in start()
+        # so the daemon frame stays importable without the CV venv (CI, tests).
+        self.engine = None
+        # The control socket runs handle() in IPC threads; the engine is stepped on
+        # the MAIN thread. This lock serializes ALL engine access so a command's
+        # apply_config / camera-reopen / provider-restart can't race a live frame.
+        # RLock (not Lock): a diag-window key fires _key -> handle -> _apply on the
+        # MAIN thread while it already holds the lock from step()/pump() — a plain
+        # Lock would self-deadlock there; RLock lets the same thread re-enter.
+        self._lock = threading.RLock()
+
+    def _apply(self):
+        """Push the current config into the engine (lock-guarded — see _lock)."""
+        if self.engine:
+            with self._lock:
+                self.engine.apply_config(self.cfg)
+
+    def _engine(self, fn):
+        """Run an engine method on the lock (so it can't race step())."""
+        if not self.engine:
+            return None
+        with self._lock:
+            return fn(self.engine)
+
+    # ---- control socket handler ------------------------------------------
+    def handle(self, cmd: dict) -> dict:
+        action = cmd.get("cmd")
+        if action == "status":
+            return self.status()
+        if action == "arm":
+            self.cfg["armed"] = True
+            save_config(self.cfg)
+            return {"ok": True, "armed": True}
+        if action == "disarm":
+            self.cfg["armed"] = False
+            save_config(self.cfg)
+            self._engine(lambda e: e.release_hold())   # don't leave a button held
+            return {"ok": True, "armed": False}
+        if action == "recenter":
+            self._engine(lambda e: e.recenter())
+            return {"ok": True}
+        if action == "monitor":
+            target = cmd.get("target", "next")
+            active = self._engine(lambda e: e.switch_monitor(target))
+            return {"ok": active is not None, "active": active}
+        if action == "diag":
+            self.cfg["diag"] = bool(cmd.get("on", not self.cfg["diag"]))
+            save_config(self.cfg)
+            self._apply()
+            return {"ok": True, "diag": self.cfg["diag"]}
+        if action == "calibrate":
+            on = bool(cmd.get("on", not self.cfg["calibrate"]))
+            self.cfg["calibrate"] = on
+            if on:
+                self.cfg["record"] = True       # ensure labels persist to JSONL
+            save_config(self.cfg)
+            self._apply()
+            return {"ok": True, "calibrate": on, "record": self.cfg["record"]}
+        if action == "record":
+            self.cfg["record"] = bool(cmd.get("on", not self.cfg["record"]))
+            save_config(self.cfg)
+            self._apply()
+            return {"ok": True, "record": self.cfg["record"]}
+        if action == "mode":
+            m = cmd.get("mode")
+            if m in ("mouse", "joystick", "comfort"):
+                self.cfg["control_mode"] = m
+                save_config(self.cfg)
+                self._apply()
+            return {"ok": True, "control_mode": self.cfg["control_mode"]}
+        if action == "recal":
+            op = cmd.get("op", "reset")
+            if op == "reset":
+                self._engine(lambda e: e.recalibrate_reset())
+                return {"ok": True, "recal": "reset"}
+            if op in ("on", "off"):
+                self.cfg["recalibrate"] = (op == "on")
+                save_config(self.cfg)
+                self._apply()
+                return {"ok": True, "recalibrate": self.cfg["recalibrate"]}
+            return {"ok": True}
+        if action == "set":
+            merged = dict(self.cfg)
+            merged.update(cmd.get("values", {}))
+            self.cfg = sanitize_config(merged)   # the chokepoint
+            save_config(self.cfg)
+            self._apply()
+            return {"ok": True, "config": self.cfg}
+        return {"ok": False, "error": f"unknown cmd: {action!r}"}
+
+    def status(self) -> dict:
+        f = self.frame
+        face_ok = bool(f and f.face_ok)
+        over_pitch = bool(f and f.over_pitch)
+        state = health.derive_state(
+            armed=self.cfg["armed"], engine_ok=self.engine is not None,
+            face_ok=face_ok, over_pitch=over_pitch, ever_tracked=self.ever_tracked)
+        return {
+            # tier 1 (HUD glance): one state + its severity
+            "state": state,
+            "state_label": health.label(state),
+            "severity": health.severity(state),
+            "armed": self.cfg["armed"],
+            "diag": self.cfg["diag"],
+            "cursor_in_shell": self.cfg["cursor_in_shell"],
+            "fps": round(self.fps, 1),
+            # tier 2 (pill detail): the metrics
+            "face_ok": face_ok,
+            "over_pitch": over_pitch,
+            "pitch_deg": round(f.pitch_deg, 1) if f else 0.0,
+            "yaw_deg": round(f.yaw_deg, 1) if f else 0.0,
+            "targets": f.target_count if f else 0,
+            "snap": f.snap_role if f else None,
+            "hand": bool(f and f.hand_present),
+            "pinch": (f.pinch if f and f.pinch else {}),
+            "last_action": f.last_action if f else None,
+            "control_mode": self.cfg["control_mode"],
+            "comfort": (f.comfort if f and f.comfort else {}),
+            "gaze_disp": round(f.gaze_disp, 3) if f else 1.0,
+            "fixating": bool(f and f.fixating),
+            "precision": bool(f and f.precision),
+            "brow_lift": round(f.brow_lift, 4) if f else 0.0,
+            "brow_thr": round(f.brow_thr, 4) if f else 0.0,
+            "cam_lit": f.cam_lit if f else 1.0,
+            "monitors": (f.monitors if f and f.monitors else {}),
+            "gesture_mode": self.cfg["gesture_mode"],
+            "gesture": (f.gesture if f else None),
+            "gesture_score": (f.gesture_score if f else 0.0),
+            "still": bool(f and f.still),
+            "record": self.cfg["record"],
+            "rec": (f.record if f and f.record else {}),
+            "calibrate": self.cfg["calibrate"],
+            "calib": (f.calib if f and f.calib else {}),
+            "torso_correction": self.cfg["torso_correction"],
+            "torso_present": bool(f and f.torso_present),
+            "body": (f.body if f and f.body else {}),
+            "recalibrate": self.cfg["recalibrate"],
+            "recal": (f.recal if f and f.recal else {}),
+            "bindings": self.cfg["bindings"],
+            "providers": self.cfg["providers"],
+        }
+
+    # ---- lifecycle --------------------------------------------------------
+    def start(self):
+        ipc.ControlServer(self.handle).start()
+
+        try:
+            from gestalt.engine import Engine  # lazy: pulls in cv2/mediapipe
+            self.engine = Engine(self.cfg, on_command=self.handle)
+            self.engine.open()
+        except Exception as e:                  # run headless if CV stack missing
+            sys.stderr.write(f"[gestaltd] engine unavailable, status-only mode: {e}\n")
+            self.engine = None
+
+        signal.signal(signal.SIGTERM, self._stop)
+        signal.signal(signal.SIGINT, self._stop)
+
+        while self.running:
+            stepped = False
+            if self.engine and self.cfg["armed"]:
+                try:
+                    with self._lock:
+                        frame = self.engine.step()  # one frame (paces the loop)
+                    stepped = True
+                    if frame:
+                        self.frame = frame
+                        if frame.face_ok:
+                            self.ever_tracked = True
+                    self.fps = self.engine.fps
+                except Exception as e:
+                    sys.stderr.write(f"[gestaltd] frame error: {e}\n")
+                    traceback.print_exc()
+                    time.sleep(0.1)
+            else:
+                self.frame = None
+                self.fps = 0.0
+                # CRITICAL: keep draining the window event queue while disarmed —
+                # otherwise the SDL/X events pile up unbounded and the OOM killer
+                # SIGKILLs the daemon minutes after you pause.
+                if self.engine:
+                    try:
+                        with self._lock:
+                            self.engine.pump()
+                    except Exception as e:
+                        sys.stderr.write(f"[gestaltd] pump error: {e}\n")
+
+            # catch monitor plug/unplug/rearrange so coordinates don't go stale
+            now = time.time()
+            if self.engine and now - self._last_layout > 2.0:
+                self._last_layout = now
+                try:
+                    with self._lock:
+                        if self.engine.refresh_layout():
+                            sys.stderr.write("[gestaltd] display layout changed — coords re-derived\n")
+                except Exception as e:
+                    sys.stderr.write(f"[gestaltd] layout refresh error: {e}\n")
+
+            ipc.write_status(self.status())
+
+            if not stepped:
+                time.sleep(0.05)                # idle heartbeat — pump often enough
+
+    def _stop(self, *_):
+        self.running = False
+        if self.engine:
+            self.engine.close()
+
+
+def main():
+    Daemon().start()
+
+
+if __name__ == "__main__":
+    main()

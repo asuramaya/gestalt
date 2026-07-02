@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.gestalt"
+          path="/org/gnome/shell/extensions/gestalt/">
+    <key name="kill-hotkey" type="as">
+      <default><![CDATA[['<Super><Alt>k']]]></default>
+      <summary>Panic kill shortcut</summary>
+      <description>
+        Global keyboard shortcut that hard-stops the gestalt daemon
+        (systemctl --user stop gestalt.service). Deliberately bypasses the
+        daemon's control socket so it works even when the pointer is unusable
+        or the daemon is wedged.
+      </description>
+    </key>
+  </schema>
+</schemalist>

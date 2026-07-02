@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.ruff_cache/
+dist/
+*.tmp
+# the bundled venv is built by install.sh, never committed
+venv/
+.venv/

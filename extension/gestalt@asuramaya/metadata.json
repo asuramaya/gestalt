@@ -1,0 +1,9 @@
+{
+  "uuid": "gestalt@asuramaya",
+  "name": "Gestalt",
+  "description": "Hands-free head-pointer + pinch-click as a Quick Settings pill — arm/disarm gesture control, recenter the cursor, adjust sensitivity, and remap pinch gestures. Requires the gestaltd daemon (https://github.com/asuramaya/gestalt).",
+  "shell-version": ["46", "47", "48", "49", "50"],
+  "url": "https://github.com/asuramaya/gestalt",
+  "settings-schema": "org.gnome.shell.extensions.gestalt",
+  "version": 2
+}

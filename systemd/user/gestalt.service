@@ -1,0 +1,30 @@
+[Unit]
+Description=Gestalt — hands-free head-pointer + pinch-click daemon
+# Needs the graphical session: webcam, /dev/uinput, and an XWayland overlay.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# Runs from the bundled uv venv installed by install.sh (mediapipe/opencv pinned
+# to Python 3.12). %h expands to the user's home.
+ExecStart=%h/.local/share/gestalt/venv/bin/python %h/.local/share/gestalt/bin/gestaltd
+Restart=on-failure
+RestartSec=2
+# Panic kill must be FAST. `systemctl --user stop` sends SIGTERM (the daemon then
+# releases any held click via engine.close()); if it's wedged and can't, SIGKILL
+# follows in 3s instead of the 90s default. A clean stop is not a "failure", so
+# Restart=on-failure does NOT resurrect it — killed stays killed until you start it.
+TimeoutStopSec=3
+KillMode=control-group
+# Cheap hardening for a session-scoped, non-root daemon. It needs the webcam
+# (/dev/video*), /dev/uinput, and X/Wayland sockets — so no PrivateDevices and
+# no AF_UNIX-only restriction. Keep the safe knobs:
+NoNewPrivileges=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# uinput injection writes a virtual input device; the rest is read-only CV.
+
+[Install]
+WantedBy=graphical-session.target

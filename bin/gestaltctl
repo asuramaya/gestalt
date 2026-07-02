@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 asuramaya and Gestalt contributors
+"""gestaltctl — tiny CLI client for the daemon's control socket.
+
+Usage:
+  gestaltctl status
+  gestaltctl arm | disarm | recenter
+  gestaltctl mode [mouse|joystick] # switch control mode (no arg = report)
+  gestaltctl record [on|off]       # log training data (signal stream + click anchors)
+  gestaltctl calibrate [on|off]    # look-and-pinch calibration (generates clean labels)
+  gestaltctl diag [on|off]         # toggle (or set) the diagnostics window
+  gestaltctl recal [reset|on|off]  # reset / toggle the implicit recalibration
+  gestaltctl set <key> <value>     # value parsed as JSON, falls back to string
+"""
+from __future__ import annotations
+
+import json
+import os
+import socket
+import sys
+
+
+def sock_path() -> str:
+    base = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return os.path.join(base, "gestalt", "control.sock")
+
+
+def send(cmd: dict) -> dict:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.connect(sock_path())
+    except OSError as e:
+        sys.exit(f"gestaltd not reachable ({e}). Is the service running?")
+    s.sendall((json.dumps(cmd) + "\n").encode())
+    data = s.recv(64 * 1024)
+    s.close()
+    return json.loads(data.decode() or "{}")
+
+
+def main(argv):
+    if not argv:
+        sys.exit(__doc__)
+    verb = argv[0]
+    if verb in ("status", "arm", "disarm", "recenter"):
+        print(json.dumps(send({"cmd": verb}), indent=2))
+    elif verb == "diag":
+        cmd = {"cmd": "diag"}
+        if len(argv) == 2 and argv[1] in ("on", "off"):
+            cmd["on"] = argv[1] == "on"
+        print(json.dumps(send(cmd), indent=2))
+    elif verb == "mode":
+        cmd = {"cmd": "mode"}
+        if len(argv) == 2 and argv[1] in ("mouse", "joystick", "comfort"):
+            cmd["mode"] = argv[1]
+        print(json.dumps(send(cmd), indent=2))
+    elif verb == "record":
+        cmd = {"cmd": "record"}
+        if len(argv) == 2 and argv[1] in ("on", "off"):
+            cmd["on"] = argv[1] == "on"
+        print(json.dumps(send(cmd), indent=2))
+    elif verb == "calibrate":
+        cmd = {"cmd": "calibrate"}
+        if len(argv) == 2 and argv[1] in ("on", "off"):
+            cmd["on"] = argv[1] == "on"
+        print(json.dumps(send(cmd), indent=2))
+    elif verb == "recal":
+        op = argv[1] if len(argv) == 2 and argv[1] in ("reset", "on", "off") else "reset"
+        print(json.dumps(send({"cmd": "recal", "op": op}), indent=2))
+    elif verb == "monitor":
+        target = argv[1] if len(argv) == 2 else "next"
+        print(json.dumps(send({"cmd": "monitor", "target": target}), indent=2))
+    elif verb == "set" and len(argv) == 3:
+        key, raw = argv[1], argv[2]
+        try:
+            val = json.loads(raw)
+        except ValueError:
+            val = raw
+        print(json.dumps(send({"cmd": "set", "values": {key: val}}), indent=2))
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
