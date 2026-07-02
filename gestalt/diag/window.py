@@ -145,6 +145,10 @@ class DiagWindow:
             f"body {'on ' if bd.get('on') else 'off'}  torso {'OK ' if torso_ok else '-- '} "
             f"act {bd.get('activity', 0.0):.2f}  drift {bd.get('mag', 0.0):.3f}"
         )
+        ep = getattr(ps, "endpoint", None) or {}
+        ep_row = (f"endpoint x{ep['x']},{ep['y']}  rem {ep['rem']:4d}px  "
+                  f"intent {ep['tgt'] or '-'}"
+                  if ep else "endpoint --  (no decelerating reach)")
         rows = [
             f"FPS {fps:4.1f}    hand {'YES' if hand else 'no '}    "
             f"FACE {face}  pitch {head.pitch_deg:+5.0f}d  yaw {head.yaw_deg:+5.0f}d",
@@ -153,6 +157,7 @@ class DiagWindow:
             f"catch r={ps.catch_radius:3.0f}",
             f"targets {ps.target_count:3}   snap: {ps.snap_role or '-'}   "
             f"arrived: {'yes' if ps.arrived else 'no'}",
+            ep_row,
             body_row,
             recal_row,
         ]

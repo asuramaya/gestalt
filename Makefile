@@ -9,7 +9,7 @@ help:
 	@echo "  make uninstall  remove everything"
 	@echo "  make check      run all static checks (CI-equivalent)"
 	@echo "  make lint       ruff + shellcheck"
-	@echo "  make test       config-sanitize fuzz (hardware-free)"
+	@echo "  make test       hardware-free tests (config fuzz + endpoint predictor)"
 	@echo "  make pack       build the extensions.gnome.org zip"
 	@echo "  make clean      remove build artifacts"
 
@@ -25,11 +25,13 @@ lint:
 
 test:
 	python3 tests/test_config.py
+	python3 tests/test_endpoint.py
 
 check: lint
 	python3 -m py_compile bin/gestaltd bin/gestaltctl \
 		$$(find gestalt providers -name '*.py')
 	python3 tests/test_config.py
+	python3 tests/test_endpoint.py
 	node --check $(EXT)/extension.js
 	python3 -c "import json; json.load(open('$(EXT)/metadata.json'))"
 	@echo "all static checks passed"

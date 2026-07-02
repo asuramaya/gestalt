@@ -61,6 +61,38 @@ variant, *CHI 2020*) reads the velocity profile and predicts the target within
 of dwell. The head therefore stays **free at all times**; there is no lock to
 break out of.
 
+### KTM endpoint → target posterior (BUILT 2026-07) — `pointing/endpoint.py`
+
+The predictor half of KTM, built as the eye's replacement after §VERDICT: in
+eye-head coordination the eyes reach the target ~200ms before the head, but the
+same before-arrival knowledge is carried by the head's own velocity profile. An
+aimed reach is ballistic — a stereotyped bell profile — so once deceleration
+begins, the **minimum-jerk closed form** (*Flash & Hogan 1985*; kinematic
+endpoint extrapolation per *Lank, Cheng & Ruiz, GI 2007*) turns the decel-side
+speed ratio directly into "distance still to travel": v/v_peak = 16·t²(1−t)²
+and s/D = 10t³−15t⁴+6t⁵ — two lines of algebra, no per-user template library.
+The predicted point is fused with the AT-SPI targets into a posterior,
+
+    P(target) ∝ exp(−d²/2σ²) · (1 + w·click_history)
+
+with σ ∝ the estimated remaining distance (uncertainty shrinks exactly when
+early commitment is still worth something), and the winner — only if it beats
+the runner-up by `endpoint_confidence`× AND lies ahead of the motion — is
+handed to the focus state machine as a **pre-acquisition**: focus commits
+mid-flight instead of waiting for arrival. Only the light `focus_pull_move`
+applies while moving, so a wrong prediction is a faint tug the break radius
+releases; the hard snap still waits for genuine arrival. FAIL-SAFE: every
+guard failure (no ballistic peak, ambiguous posterior, target behind the
+motion) degrades to plain settle-time acquisition — the pre-VERDICT behavior.
+→ `endpoint_predict` (on), `endpoint_min_peak_pxs`, `endpoint_decel_ratio`,
+`endpoint_sigma_frac`/`_sigma_min_px`, `endpoint_confidence`, `endpoint_gate_px`,
+`endpoint_history_w`. Observability: `status().endpoint` (predicted point,
+remaining px, intent role, confidence), the diag `endpoint` row, and the
+recorder logs the per-frame prediction stream so it can be scored offline
+against click anchors (the eval harness + its ~800px static-affine baseline
+are from the 2026-07 experiment). Tested hardware-free in
+`tests/test_endpoint.py` against synthetic minimum-jerk reaches.
+
 ## 5. "The click lands wrong — my head jumps during the pinch" → **Steady Clicks**
 
 *Trewin, Keates, Moffatt — "Developing Steady Clicks," ASSETS 2006.* At

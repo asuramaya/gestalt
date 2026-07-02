@@ -204,6 +204,7 @@ class Daemon:
             "last_action": f.last_action if f else None,
             "control_mode": self.cfg["control_mode"],
             "comfort": (f.comfort if f and f.comfort else {}),
+            "endpoint": (f.endpoint if f and f.endpoint else None),
             "gaze_disp": round(f.gaze_disp, 3) if f else 1.0,
             "gaze_thr": round(f.gaze_thr, 3) if f else 0.0,
             "fixating": bool(f and f.fixating),

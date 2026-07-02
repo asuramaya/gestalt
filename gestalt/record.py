@@ -101,6 +101,8 @@ class Recorder:
         # accuracy-across-pose lever, since body-comp is bypassed in comfort).
         if getattr(ps, "comfort", None):
             rec["comfort"] = ps.comfort          # nx,ny (neutral), qx,qy (ranges), cur, gain…
+        if getattr(ps, "endpoint", None):
+            rec["endpoint"] = ps.endpoint        # KTM prediction — eval it against anchors
         if getattr(head, "body", None):
             rec["body"] = head.body              # torso drift (unused in comfort; logged)
         if torso is not None and getattr(torso, "present", False):

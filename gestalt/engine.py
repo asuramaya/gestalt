@@ -50,6 +50,7 @@ class FrameResult:
     record: dict = None                # session recorder state (frames, anchors, file)
     calib: dict = None                 # calibration state (labels, target, loop)
     comfort: dict = None               # comfort envelope + follow-gain (straightness)
+    endpoint: dict = None              # KTM endpoint prediction + intent (observability)
     gaze_disp: float = 1.0             # iris dispersion (low = eyes settled)
     gaze_thr: float = 0.0              # live self-calibrated fixation threshold (k×median)
     fixating: bool = False             # gaze-fixation precision cue
@@ -461,6 +462,7 @@ class Engine:
             last_action=self._last_action, recal=ps.recal,
             still=ps.still, deflection=ps.deflection, record=self._recorder.state(),
             calib=(self._calib.state() if self._calib else None), comfort=ps.comfort,
+            endpoint=ps.endpoint,
             gaze_disp=head.gaze_disp, gaze_thr=head.gaze_thr, fixating=head.fixating,
             cam_lit=round(self._cam_lit_ema, 2),
             monitors=self._monitors.state() if self._monitors else None,

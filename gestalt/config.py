@@ -256,6 +256,21 @@ DEFAULTS = {
                                    #   no head-jitter leak; the break radius still releases it)
     "focus_pull_move": 0.20,       # pull while moving (light, so you can slide off then break)
 
+    # ---- KTM endpoint prediction → target posterior (see POINTING.md §endpoint)
+    # Once a ballistic reach decelerates, the minimum-jerk profile says how much
+    # distance remains — fuse that predicted endpoint with the target list and a
+    # click-history prior, and pre-acquire focus BEFORE arrival (the job the eye
+    # was supposed to do; §VERDICT). Fail-safe: every ambiguity → no intent →
+    # behaves exactly like plain focus acquisition.
+    "endpoint_predict": True,      # enable early (pre-arrival) focus acquisition
+    "endpoint_min_peak_pxs": 900.0,  # cursor px/s a reach must hit to count as ballistic
+    "endpoint_decel_ratio": 0.85,  # predict only once speed < this × the reach's peak
+    "endpoint_sigma_frac": 0.35,   # posterior σ as a fraction of predicted remaining px
+    "endpoint_sigma_min_px": 60.0,  # σ floor — never sharper than target-sized
+    "endpoint_confidence": 2.0,    # winner must beat runner-up by this posterior ratio
+    "endpoint_gate_px": 350.0,     # ignore targets further than this from the endpoint
+    "endpoint_history_w": 0.25,    # click-history prior weight (0 = geometry only)
+
     # ---- implicit recalibration (PACE/EyeO-style; RLS from confirmed pinches)
     # Each confirmed click at a magnetized centroid is a (raw-pose, intended)
     # sample; an online affine map corrects mapping drift. See docs/POINTING.md.
@@ -405,6 +420,13 @@ _RANGES = {
     "target_pos_alpha": (0.02, 1.0),
     "target_min_hits": (1, 20),
     "target_max_miss": (0, 60),
+    "endpoint_min_peak_pxs": (200.0, 6000.0),
+    "endpoint_decel_ratio": (0.3, 0.98),
+    "endpoint_sigma_frac": (0.05, 1.0),
+    "endpoint_sigma_min_px": (10.0, 400.0),
+    "endpoint_confidence": (1.0, 10.0),
+    "endpoint_gate_px": (50.0, 1500.0),
+    "endpoint_history_w": (0.0, 2.0),
     "focus_acquire_px": (10.0, 600.0),
     "focus_break_px": (20.0, 1200.0),
     "focus_pull": (0.0, 1.0),
@@ -465,6 +487,7 @@ def sanitize_config(raw: dict) -> dict:
     cfg["comfort_decel"] = bool(cfg["comfort_decel"])
     cfg["target_track"] = bool(cfg["target_track"])
     cfg["focus_acquire"] = bool(cfg["focus_acquire"])
+    cfg["endpoint_predict"] = bool(cfg["endpoint_predict"])
     if cfg["control_mode"] not in ("mouse", "joystick", "comfort"):
         cfg["control_mode"] = "mouse"
 
