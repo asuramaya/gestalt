@@ -412,10 +412,43 @@ Before betting on the EYE as the bidirectional-vertical channel the head/mouth/b
 all lack, we need to SEE if the raw iris signal is even coherent on IR. `gaze_debug`
 draws a magenta dot at the (uncalibrated) gaze estimate (`gaze_debug_gain` × the
 head-relative iris offset). NOT a pointer — a coherence check: does looking left
-move it left, is it stable, does it cover range? If yes, MAGIC (gaze-coarse +
-head-fine) is on the table; if it smears, the eye is dead on this rig and the brow
-clutch was the right call. `set gaze_debug true`.
+move it left, is it stable, does it cover range? `set gaze_debug true`.
+
+### VERDICT (2026-07-02): the eye is dead on this rig — via iris landmarks
+
+The coherence check was run, glasses on, on BOTH camera nodes: the IR node
+(576×360, the daily driver) and the RGB node (1280×720, `cam_normalize` off).
+**Jittery mess on both — practically noise relative to the head signal.** Why:
+the iris spans ~8px on the IR sensor and the usable gaze signal (iris-centre
+displacement inside the eye opening) is SUB-pixel; near-IR washes out the
+limbus contrast MediaPipe's iris landmarks key on (the model was trained on
+RGB); CLAHE amplifies noise exactly in the eye region; and on RGB the budget
+went to lens glare and the same landmark-geometry floor. Consequences:
+
+  * **MAGIC / gaze-coarse pointing is OFF the table on this hardware** with
+    landmark-based gaze. Do not re-litigate without new evidence: changed
+    glasses, a different camera, or an end-to-end learned gaze model on raw
+    eye crops (the 2-4° literature numbers come from trained CNNs, not
+    landmark geometry — that's a data-hungry research project, parked as
+    *possible-but-not-with-landmarks*, not "impossible").
+  * `gaze_fixation` now **defaults OFF** — before the threshold self-
+    calibration (above) the stuck-ON gate had been silently capping the
+    follow gmax toward `comfort_fix_gmax` (0.35), i.e. the fried eye channel
+    was actively DEGRADING head aim. A channel that can only inject noise
+    stays out of the pipeline. The instruments (gaze dot, self-calibrating
+    gate) remain built for a 30-second retest if the hardware ever changes.
+  * **The hybrid intent design SURVIVES without the eye.** What gaze was for
+    — knowing the target BEFORE arrival — has a second source: **KTM
+    endpoint prediction** (Pasqual & Wobbrock CHI'14: the velocity profile
+    predicts the endpoint within ~39px at 90% of the movement). We already
+    use KTM's arrival half; the unbuilt half is the predictor. Predicted
+    endpoint × AT-SPI target list × click-history priors = the same target
+    posterior, driven by head kinematics instead of the iris. Calibration
+    recordings (pose-trajectory → known-point labels) are its training/eval
+    data — and the eval harness + its number-to-beat (a static affine reads
+    intent at ~800px median) already exist from the 2026-07 experiment.
 
 **Still on the table:** Kalman denoiser on the raw angle; dwell-decay precision
-(gain ramps down the longer you linger); the mouth *horizontal* vernier; and — if
-the gaze dot proves coherent — gaze-coarse/head-fine (MAGIC) for the vertical axis.
+(gain ramps down the longer you linger); the mouth *horizontal* vernier; and the
+KTM endpoint→target posterior above (the surviving half of the AVP ambition:
+intent inference + target-level commitment, now via motion shape, not eyes).

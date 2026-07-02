@@ -144,7 +144,12 @@ DEFAULTS = {
     # Eyes settling on a target (I-DT fixation; Salvucci & Goldberg ETRA 2000)
     # leads the head by ~200ms — so it gentles the follow gain BEFORE the head
     # settles. Calibration-free: only iris dispersion matters, never position.
-    "gaze_fixation": True,         # enable the gaze-fixation precision gate
+    "gaze_fixation": False,        # gaze-fixation precision gate — OFF: iris-landmark
+                                   #   gaze measured incoherent on BOTH camera nodes
+                                   #   (2026-07-02, glasses; see docs/POINTING.md
+                                   #   §VERDICT). A noise-only channel stays out of
+                                   #   the pipeline; flip on only after the gaze dot
+                                   #   passes a retest on changed hardware.
     "gaze_fix_window": 6,          # frames of iris signal for the dispersion test
     # SELF-CALIBRATING fixation threshold (the fixed 0.08 was measured stuck-ON on
     # one session and stuck-OFF on another — see docs/POINTING.md). Fixation =
