@@ -49,6 +49,7 @@ class PointerState:
     still: bool = False           # head at rest (neutral re-anchoring)
     comfort: dict = None          # comfort mode: learned envelope + current position
     endpoint: dict = None         # KTM endpoint prediction + intent (observability)
+    focus: dict = None            # focus-magnetism churn diagnostics (id, dist, events)
 
 
 class Pointer:
@@ -77,6 +78,9 @@ class Pointer:
         self._endpoint = EndpointPredictor(cfg)   # KTM: endpoint from motion shape
         self._posterior = TargetPosterior(cfg)    # endpoint × targets × history
         self._ep_state = None         # last prediction/intent snapshot (observability)
+        # cumulative focus-event counters (diagnose acquire/break churn — a healthy
+        # session acquires ~once per aim; a flapping one breaks/re-acquires per frame)
+        self._fev = {"as": 0, "ai": 0, "bd": 0, "bv": 0}  # settle/intent acq, dist/vanish break
 
     def set_bounds(self, sw: int, sh: int, monitors=None):
         """Re-target the coordinate space after a display change (monitor
@@ -129,9 +133,12 @@ class Pointer:
         by_id = {t.get("id"): t for t in targets}
         foc = by_id.get(self._focus_id) if self._focus_id is not None else None
         if foc is None:
-            self._focus_id = None            # focused target vanished
+            if self._focus_id is not None:
+                self._fev["bv"] += 1         # focused target vanished (tracker cull)
+            self._focus_id = None
         elif math.hypot(foc["cx"] - cx, foc["cy"] - cy) > self.cfg["focus_break_px"]:
             self._focus_id, foc = None, None  # broke free (directed motion away)
+            self._fev["bd"] += 1
 
         if foc is None and arrived:           # acquire while settling (the classic path)
             best, nt = self.cfg["focus_acquire_px"], None
@@ -141,13 +148,17 @@ class Pointer:
                     best, nt = d, tg
             if nt is not None:
                 self._focus_id, foc = nt.get("id"), nt
+                self._fev["as"] += 1
         elif foc is None and intent is not None:
             # PRE-acquire the predicted target mid-flight. Only the light
             # focus_pull_move applies while moving, so a wrong prediction feels
             # like a faint tug and the break radius releases it as the cursor
             # sails past — the hard snap still waits for genuine arrival.
             self._focus_id, foc = intent.get("id"), intent
+            self._fev["ai"] += 1
 
+        self._focus_dist = (round(math.hypot(foc["cx"] - cx, foc["cy"] - cy))
+                            if foc is not None else None)
         if foc is None:
             return cx, cy, None, None
         # firm snap when settled (sits ON the stable target → no jiggle), light
@@ -331,7 +342,9 @@ class Pointer:
             fx, fy, speed_pxs, radius, snap_role, arrived, len(targets),
             raw=(self.ox, self.oy), corrected=(cx, cy), recal=self._recal.state(),
             mode=mode, deflection=deflection, still=self._neutral.is_still,
-            comfort=comfort_state, endpoint=self._ep_state)
+            comfort=comfort_state, endpoint=self._ep_state,
+            focus={"id": self._focus_id, "d": getattr(self, "_focus_dist", None),
+                   "ev": dict(self._fev)})
 
     def coast(self, targets, dt: float, predict: float,
               precision: bool = False) -> PointerState | None:
