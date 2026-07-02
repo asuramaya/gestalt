@@ -6,7 +6,7 @@
 Usage:
   gestaltctl status
   gestaltctl arm | disarm | recenter
-  gestaltctl mode [mouse|joystick] # switch control mode (no arg = report)
+  gestaltctl mode [mouse|joystick|comfort] # switch control mode (no arg = report)
   gestaltctl record [on|off]       # log training data (signal stream + click anchors)
   gestaltctl calibrate [on|off]    # look-and-pinch calibration (generates clean labels)
   gestaltctl diag [on|off]         # toggle (or set) the diagnostics window

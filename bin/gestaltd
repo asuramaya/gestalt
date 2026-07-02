@@ -74,6 +74,9 @@ class Daemon:
         self.fps = 0.0
         self._last_layout = 0.0        # last display-layout re-query (catch monitor changes)
         self.ever_tracked = False      # have we ever seen a face? (searching vs lost)
+        self._none_steps = 0           # consecutive step()==None (stale-frame detector)
+        self._was_armed = None         # last armed state (providers pause/resume on edges)
+        self._status_payload = None    # last written status JSON (skip no-op rewrites)
         # Heavy modules (camera/MediaPipe/overlay) are imported lazily in start()
         # so the daemon frame stays importable without the CV venv (CI, tests).
         self.engine = None
@@ -158,9 +161,15 @@ class Daemon:
         if action == "set":
             merged = dict(self.cfg)
             merged.update(cmd.get("values", {}))
+            was_armed = self.cfg["armed"]
             self.cfg = sanitize_config(merged)   # the chokepoint
             save_config(self.cfg)
             self._apply()
+            # disarming via `set` must release exactly like "disarm" — once
+            # disarmed the loop stops reconciling holds, so a live drag would
+            # otherwise leave its button pressed forever.
+            if was_armed and not self.cfg["armed"]:
+                self._engine(lambda e: e.release_hold())
             return {"ok": True, "config": self.cfg}
         return {"ok": False, "error": f"unknown cmd: {action!r}"}
 
@@ -168,9 +177,11 @@ class Daemon:
         f = self.frame
         face_ok = bool(f and f.face_ok)
         over_pitch = bool(f and f.over_pitch)
+        cam_lost = bool(self.engine and self.engine.camera_lost)
         state = health.derive_state(
             armed=self.cfg["armed"], engine_ok=self.engine is not None,
-            face_ok=face_ok, over_pitch=over_pitch, ever_tracked=self.ever_tracked)
+            face_ok=face_ok, over_pitch=over_pitch, ever_tracked=self.ever_tracked,
+            camera_lost=cam_lost)
         return {
             # tier 1 (HUD glance): one state + its severity
             "state": state,
@@ -182,6 +193,7 @@ class Daemon:
             "fps": round(self.fps, 1),
             # tier 2 (pill detail): the metrics
             "face_ok": face_ok,
+            "camera_lost": cam_lost,
             "over_pitch": over_pitch,
             "pitch_deg": round(f.pitch_deg, 1) if f else 0.0,
             "yaw_deg": round(f.yaw_deg, 1) if f else 0.0,
@@ -218,7 +230,14 @@ class Daemon:
 
     # ---- lifecycle --------------------------------------------------------
     def start(self):
-        ipc.ControlServer(self.handle).start()
+        try:
+            ipc.ControlServer(self.handle).start()
+        except RuntimeError as e:
+            # a live socket means another gestaltd (e.g. the systemd service)
+            # already owns this session — stealing it would leave two daemons
+            # fighting over one camera. Bail loudly instead.
+            sys.stderr.write(f"[gestaltd] {e}\n")
+            sys.exit(1)
 
         try:
             from gestalt.engine import Engine  # lazy: pulls in cv2/mediapipe
@@ -232,16 +251,42 @@ class Daemon:
         signal.signal(signal.SIGINT, self._stop)
 
         while self.running:
+            armed = bool(self.engine and self.cfg["armed"])
+            if armed != self._was_armed:
+                self._was_armed = armed
+                # providers poll the AT-SPI tree with synchronous D-Bus round
+                # trips (atspi alone ~27% CPU, plus load on gnome-shell and the
+                # focused app) yet targets are only consumed while armed —
+                # freeze the subprocesses on the disarm edge, thaw on arm.
+                if self.engine:
+                    try:
+                        with self._lock:
+                            self.engine.set_idle(not armed)
+                    except Exception as e:
+                        sys.stderr.write(f"[gestaltd] provider pause/resume error: {e}\n")
+            loop_t = time.time()
             stepped = False
-            if self.engine and self.cfg["armed"]:
+            if armed:
                 try:
                     with self._lock:
                         frame = self.engine.step()  # one frame (paces the loop)
-                    stepped = True
                     if frame:
+                        self._none_steps = 0
+                        stepped = True
                         self.frame = frame
                         if frame.face_ok:
                             self.ever_tracked = True
+                    else:
+                        # None is routine during IR-strobe coast (every other
+                        # frame at worst — 30 in a ROW can't happen strobing),
+                        # but a run of ~30 means reads are failing: drop the
+                        # stale frame so face_ok goes false instead of showing
+                        # a frozen green "Tracking", and take the idle sleep
+                        # below instead of spinning this loop at ~100Hz.
+                        self._none_steps += 1
+                        stepped = self._none_steps < 30 and not self.engine.camera_lost
+                        if not stepped:
+                            self.frame = None
                     self.fps = self.engine.fps
                 except Exception as e:
                     sys.stderr.write(f"[gestaltd] frame error: {e}\n")
@@ -250,6 +295,7 @@ class Daemon:
             else:
                 self.frame = None
                 self.fps = 0.0
+                self._none_steps = 0
                 # CRITICAL: keep draining the window event queue while disarmed —
                 # otherwise the SDL/X events pile up unbounded and the OOM killer
                 # SIGKILLs the daemon minutes after you pause.
@@ -260,6 +306,13 @@ class Daemon:
                     except Exception as e:
                         sys.stderr.write(f"[gestaltd] pump error: {e}\n")
 
+            # the diagnostics window's close button (the only decorated window)
+            # lands as pygame.QUIT — pump() only records it, so honour it here
+            # through the same sanitize/save/apply path as every other toggle.
+            if self.engine and self.engine.quit_requested:
+                self.engine.quit_requested = False
+                self.handle({"cmd": "diag", "on": False})
+
             # catch monitor plug/unplug/rearrange so coordinates don't go stale
             now = time.time()
             if self.engine and now - self._last_layout > 2.0:
@@ -267,19 +320,39 @@ class Daemon:
                 try:
                     with self._lock:
                         if self.engine.refresh_layout():
-                            sys.stderr.write("[gestaltd] display layout changed — coords re-derived\n")
+                            sys.stderr.write(
+                                "[gestaltd] display layout changed — coords re-derived\n")
                 except Exception as e:
                     sys.stderr.write(f"[gestaltd] layout refresh error: {e}\n")
 
-            ipc.write_status(self.status())
+            # status.json is polled at ~1Hz but this loop runs at camera rate —
+            # skip the rewrite when the snapshot didn't change. (Armed, fps
+            # churns so it writes every frame; the win is the idle case.)
+            payload = json.dumps(self.status())
+            if payload != self._status_payload:
+                self._status_payload = payload
+                ipc.write_status(payload)
 
             if not stepped:
                 time.sleep(0.05)                # idle heartbeat — pump often enough
+            else:
+                # fps_cap: the blocking camera read normally paces the loop well
+                # below the cap, so this only bites on a very-high-fps camera.
+                # Enforced here rather than in step() so the budget covers the
+                # WHOLE iteration — pipeline, status write and layout poll.
+                rem = 1.0 / self.cfg["fps_cap"] - (time.time() - loop_t)
+                if rem > 0:
+                    time.sleep(rem)
+
+        # close OUTSIDE the signal handler: handlers run between bytecodes on
+        # the MAIN thread, so a close() from inside one can re-enter a step()
+        # mid-use of the camera/windows/uinput. close() still releases any held
+        # button; a wedged loop is covered by systemd's TimeoutStopSec=3.
+        if self.engine:
+            self.engine.close()
 
     def _stop(self, *_):
         self.running = False
-        if self.engine:
-            self.engine.close()
 
 
 def main():

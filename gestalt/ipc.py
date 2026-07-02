@@ -32,12 +32,17 @@ def socket_path() -> str:
     return os.path.join(runtime_dir(), "control.sock")
 
 
-def write_status(snapshot: dict) -> None:
-    """Atomically publish the status snapshot (write-temp-then-rename)."""
+def write_status(snapshot: dict | str) -> None:
+    """Atomically publish the status snapshot (write-temp-then-rename). Accepts
+    a pre-serialized str so the daemon can compare payloads and skip no-op
+    rewrites — status.json is polled at ~1Hz; don't churn it at loop rate."""
     path = status_path()
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(snapshot, f)
+        if isinstance(snapshot, str):
+            f.write(snapshot)
+        else:
+            json.dump(snapshot, f)
     os.replace(tmp, path)
 
 
@@ -50,6 +55,27 @@ class ControlServer(threading.Thread):
         super().__init__(name="gestalt-control")
         self._handler = handler
         self._sock = None
+
+    def start(self):
+        # Refuse to steal a LIVE socket: unlinking a stale path from a crash is
+        # fine, but if something answers a connect, another gestaltd (e.g. the
+        # systemd service) already owns it — two daemons would fight over one
+        # camera. Probe here, before the thread unlinks/rebinds in run(), so
+        # the caller can bail out cleanly.
+        path = socket_path()
+        if os.path.exists(path):
+            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            probe.settimeout(0.5)
+            try:
+                probe.connect(path)
+            except OSError:
+                pass                # nothing listening — stale, safe to replace
+            else:
+                raise RuntimeError(
+                    f"another gestaltd is running (control socket {path} answered)")
+            finally:
+                probe.close()
+        super().start()
 
     def run(self):
         path = socket_path()

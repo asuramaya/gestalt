@@ -17,6 +17,8 @@ import math
 import time
 from dataclasses import dataclass
 
+from ..config import HOLD_ACTIONS
+
 # fingertip landmark index, and the extension gate (tip-to-wrist / palm) that
 # rejects fists/curls — a real pinch has the acting finger extended.
 TIP = {"index": 8, "middle": 12, "ring": 16, "pinky": 20}
@@ -99,8 +101,14 @@ class PinchDetector:
         # HELD (drag): keep holding while the engaged finger stays pinched; release
         # (debounced) once it re-opens past rearm. Engine reads `engaged` to drag.
         if self.engaged is not None:
-            d = math.hypot(hl[TIP[self._eg_finger]].x - tx,
-                           hl[TIP[self._eg_finger]].y - ty) / palm
+            # diag zips dists against readiness() (all configured fingers, in
+            # self._fingers order), so return one distance per finger — not just the
+            # engaged one — or the chips would show the wrong finger's distance.
+            held = {}
+            for finger in self._fingers:
+                held[finger] = math.hypot(hl[TIP[finger]].x - tx,
+                                          hl[TIP[finger]].y - ty) / palm
+            d = held[self._eg_finger]
             if d < rearm:
                 self._rel = 0
             else:
@@ -108,7 +116,7 @@ class PinchDetector:
                 if self._rel >= self.cfg["gesture_release_frames"]:
                     self.engaged = None
                     self._eg_finger = None
-            return [], self._eg_finger, [round(d, 3)]
+            return [], self._eg_finger, [round(held[f], 3) for f in self._fingers]
 
         confirm = self.cfg["pinch_confirm_frames"]
         cooldown = self.cfg["cooldown_s"]
@@ -134,14 +142,18 @@ class PinchDetector:
                     if head_speed <= gate:
                         action = self.cfg["bindings"].get(f"pinch_{finger}")
                         if action and action != "none":
-                            if self.cfg["gesture_hold"]:
+                            # hold only what can be held: double_click/scroll_* have no
+                            # meaningful drag, so they tap even in gesture_hold mode.
+                            if self.cfg["gesture_hold"] and action in HOLD_ACTIONS:
                                 self.engaged = action      # -> engine presses + drags
                                 self._eg_finger = finger
                                 self._rel = 0
                             else:
                                 fires.append(
                                     Fire(action, finger, cursor_xy[0], cursor_xy[1], "tap"))
-                        self._last_fire = now
+                            # consume the shared cooldown ONLY on a real fire — a stray
+                            # unbound pinch must not delay a bound finger's click.
+                            self._last_fire = now
                         st["armed"] = False
                         st["below"] = 0
                         self._waiting[finger] = False

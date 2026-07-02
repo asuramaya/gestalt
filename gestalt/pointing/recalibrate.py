@@ -35,6 +35,14 @@ class Recalibrator:
         self.apply_config(cfg)
         self.reset()
 
+    def set_bounds(self, sw: int, sh: int):
+        # Re-scale the consistency gate after a display change. diag/12 is a
+        # geometry-relative threshold, so a new screen size needs a fresh diag or
+        # the rejection radius is wrong for the new monitor. We deliberately do NOT
+        # reset theta/covariance: the affine map lives in screen coords and its
+        # learned drift correction survives a resize better than starting over.
+        self.diag = math.hypot(sw, sh)
+
     def apply_config(self, cfg: dict):
         self.enabled = cfg["recalibrate"]
         self.lam = cfg["recal_forgetting"]

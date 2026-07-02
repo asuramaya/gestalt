@@ -28,6 +28,15 @@ ACTIONS = {
     "key_enter", "key_escape", "key_tab", "scroll_up", "scroll_down", "none",
 }
 
+# Actions that make sense to HOLD (press-and-drag / press-and-hold). A commit
+# bound to anything else (double_click, scroll_*) is always an atomic tap even in
+# gesture_hold mode — a drag is meaningless for them. Pure data so config.py stays
+# stdlib-only; the detectors import this to decide tap-vs-engage.
+HOLD_ACTIONS = {
+    "left_click", "right_click", "middle_click",
+    "key_enter", "key_escape", "key_tab",
+}
+
 # Fingers the pinch detector can arm (thumb-to-X distance). index + pinky are
 # the reliable pair found in the prototype; middle/ring offered but off by default.
 FINGERS = {"index", "middle", "ring", "pinky"}
@@ -57,8 +66,6 @@ DEFAULTS = {
                                    #   MediaPipe; leave off for RGB
     "cam_fps": 0,                  # request this capture rate (0 = leave sensor default);
                                    #   bump it if a strobing IR cam halves your tracked fps
-    "cam_min_brightness": 0.0,     # legacy absolute dark-floor (0 = off); superseded by
-                                   #   cam_strobe_ratio which adapts to distance
     "cam_strobe_ratio": 0.4,       # skip a frame only if it's < this fraction of the recent
                                    #   PEAK brightness — drops the IR strobe's black frames at
                                    #   ANY distance (a dim far face still passes; absolute
@@ -245,7 +252,6 @@ DEFAULTS = {
 
     # ---- commit (Steady Clicks freeze; Trewin ASSETS 2006) -----------------
     "commit_velocity_gate": 0.012, # reject pinch-click above this head speed
-    "commit_freeze_ms": 180,       # freeze cursor from pinch-down to release
 
     # ---- gestures ----------------------------------------------------------
     "pinch_close": 0.55,           # thumb-tip distance / palm to fire
@@ -307,7 +313,6 @@ _RANGES = {
     "cam_width": (320, 1920),
     "cam_height": (240, 1080),
     "cam_fps": (0, 120),
-    "cam_min_brightness": (0.0, 60.0),
     "cam_strobe_ratio": (0.0, 0.9),
     "face_min_detection": (0.05, 0.9),
     "face_min_presence": (0.05, 0.9),
@@ -390,7 +395,6 @@ _RANGES = {
     "focus_pull": (0.0, 1.0),
     "focus_pull_move": (0.0, 1.0),
     "commit_velocity_gate": (0.0, 1.0),
-    "commit_freeze_ms": (0, 1000),
     "pinch_close": (0.1, 1.5),
     "pinch_rearm": (0.1, 2.0),
     "pinch_confirm_frames": (1, 10),

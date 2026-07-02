@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import time
 
+from ..config import HOLD_ACTIONS
 from .pinch import Fire
 
 
@@ -109,7 +110,9 @@ class GestureDetector:
                 self._fired_g = gname
                 self._armed = False
                 self._waiting = False
-                if self.cfg["gesture_hold"]:
+                # hold only what can be held: double_click/scroll_* have no
+                # meaningful drag, so they tap even in gesture_hold mode.
+                if self.cfg["gesture_hold"] and action in HOLD_ACTIONS:
                     self.engaged = action        # -> engine presses + drags
                     self._eg_gesture = gname
                     self._rel = 0

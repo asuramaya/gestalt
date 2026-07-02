@@ -117,6 +117,9 @@ class Engine:
         self._fps = 0.0
         self._cam_lit_ema = 1.0    # rolling fraction of frames that pass the dark gate
         self._cam_peak = 0.0       # decaying peak frame brightness (relative strobe gate)
+        self._read_fails = 0       # consecutive cap.read() failures (camera-death gate)
+        self._reopen_t = 0.0       # last reopen attempt while lost (2s backoff)
+        self.camera_lost = False   # daemon surfaces this as the camera_lost health state
         _rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
         self._cursor_file = os.path.join(_rt, "gestalt", "cursor")   # live pos for the extension
         self._fps_t = None
@@ -196,8 +199,13 @@ class Engine:
             if not shell:
                 self._overlay.move(x, y, snapped=snapped, precision=precision)
         try:
-            with open(self._cursor_file, "w") as f:
+            # tmp-then-replace (same pattern as ipc.write_status): the extension
+            # polls this file at 30Hz, and a read landing between an in-place
+            # truncate and the write parses NaN and flickers the ring.
+            tmp = self._cursor_file + ".tmp"
+            with open(tmp, "w") as f:
                 f.write(f"{x:.1f} {y:.1f} {1 if snapped else 0}")
+            os.replace(tmp, self._cursor_file)
         except Exception:
             pass
 
@@ -278,8 +286,25 @@ class Engine:
 
         ok, frame = self._cap.read()
         if not ok:
+            # ~30 straight failures = the camera died (unplugged / claimed by
+            # another process); _coast can't inflate this — it only follows reads
+            # that SUCCEEDED. Flag it for health and retry _open_camera on a 2s
+            # backoff forever. "auto" raises while no node works — catch it and
+            # stay lost until a later backoff tick finds one.
+            self._read_fails += 1
+            if self._read_fails >= 30:
+                self.camera_lost = True
+                now = time.time()
+                if now - self._reopen_t > 2.0:
+                    self._reopen_t = now
+                    try:
+                        self._open_camera()
+                    except Exception:
+                        pass
             time.sleep(0.01)
             return None
+        self._read_fails = 0
+        self.camera_lost = False
         # IR illuminators strobe — every other frame is black. Drop a frame only if
         # it's much darker than the RECENT PEAK (relative gate), so the black frames
         # are skipped at any distance while a dim far face still passes — an absolute
@@ -628,9 +653,22 @@ class Engine:
             self._target_overlay = None
         return True
 
+    def set_idle(self, idle: bool):
+        """Freeze/thaw the target providers (SIGSTOP/SIGCONT). Targets are only
+        consumed while armed, yet every provider poll is a synchronous D-Bus
+        round trip that taxes gnome-shell and the focused app — so the daemon
+        parks them across the disarm edge instead of letting them spin 24/7."""
+        if self._targets:
+            (self._targets.pause if idle else self._targets.resume)()
+
     def apply_config(self, cfg: dict):
         old_cam = {k: self.cfg.get(k) for k in ("camera", "cam_width", "cam_height", "cam_fps")}
-        old_providers = self.cfg.get("providers")
+        # the tuning knobs ride into the providers via env at SPAWN time
+        # (registry.start), so a hot-set of any of them is silently ignored
+        # unless the subprocesses respawn — restart on those changes too.
+        prov_keys = ("providers", "provider_poll_ms", "cv_poll_ms", "cv_apps",
+                     "atspi_active_only")
+        old_prov = {k: self.cfg.get(k) for k in prov_keys}
         self.cfg = cfg
         for comp in (self._head, self._pointer, self._pinch, self._gesture,
                      self._targets, self._tracker):
@@ -640,12 +678,14 @@ class Engine:
         # to the IR node without a service restart).
         if self._cap is not None and any(old_cam[k] != cfg.get(k) for k in old_cam):
             self._open_camera()
-        # provider set changed -> restart the subprocesses + drop stale tracks
-        if self._targets and cfg.get("providers") != old_providers:
+        # provider set or spawn-time tuning changed -> restart + drop stale tracks
+        if self._targets and any(old_prov[k] != cfg.get(k) for k in prov_keys):
             self._targets.close()
             self._targets.start()
             if self._tracker:
                 self._tracker.reset()
+            if not cfg.get("armed", True):     # keep respawned procs parked while idle
+                self._targets.pause()
 
     def close(self):
         if self._inject is not None:           # never leave a button/key held down

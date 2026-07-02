@@ -15,6 +15,7 @@ STATES = {
     "off": ("Disarmed", "idle"),
     "starting": ("Starting", "warn"),
     "no_engine": ("No camera/CV", "bad"),
+    "camera_lost": ("Camera lost", "bad"),       # camera opened but reads dead (unplugged)
     "searching": ("Looking for you", "warn"),
     "tracking": ("Tracking", "ok"),
     "degraded": ("Head too high/low", "warn"),   # past the pitch limit — pose unreliable
@@ -23,12 +24,17 @@ STATES = {
 
 
 def derive_state(*, armed: bool, engine_ok: bool, face_ok: bool,
-                 over_pitch: bool, ever_tracked: bool) -> str:
+                 over_pitch: bool, ever_tracked: bool,
+                 camera_lost: bool = False) -> str:
     """Collapse the raw signals into one state name (key of STATES)."""
     if not engine_ok:
         return "no_engine"
     if not armed:
         return "off"
+    # a dead camera outranks the face checks — face_ok is meaningless on a frozen
+    # (or absent) frame, so report the real fault instead of a stale "tracking".
+    if camera_lost:
+        return "camera_lost"
     if face_ok:
         return "degraded" if over_pitch else "tracking"
     # armed, engine running, but no face this frame

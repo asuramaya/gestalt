@@ -44,6 +44,11 @@ uv pip install --python "$PREFIX/venv/bin/python" \
 # 2. app code (daemon + cli + package + providers + MediaPipe models)
 echo "-- installing code -> $PREFIX"
 cp "$SRC/bin/gestaltd" "$SRC/bin/gestaltctl" "$PREFIX/bin/"
+# Wipe the three code dirs before copying. `cp -r src dst` when dst EXISTS copies
+# INTO it (dst/src) *and* leaves last install's stale modules/__pycache__ behind —
+# an "upgrade" would then silently run old code. rm -rf makes the copy a clean
+# replace. Only these three are code; venv/recordings/bin/config are preserved.
+rm -rf "$PREFIX/gestalt" "$PREFIX/providers" "$PREFIX/models"
 cp -r "$SRC/gestalt" "$PREFIX/gestalt"
 cp -r "$SRC/providers" "$PREFIX/providers"
 cp -r "$SRC/models" "$PREFIX/models"

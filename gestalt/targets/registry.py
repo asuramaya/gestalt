@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 
@@ -109,10 +110,39 @@ class Registry:
         # provider set changes need a restart; the daemon handles that on `set`.
         self.cfg = cfg
 
+    def pause(self):
+        """SIGSTOP the providers. Targets are only consumed while armed, yet
+        every poll is a synchronous D-Bus round trip that taxes gnome-shell and
+        the focused app (atspi alone ~27% CPU 24/7) — freeze the processes
+        outright while disarmed instead of letting them spin."""
+        for p in self._procs.values():
+            try:
+                p.send_signal(signal.SIGSTOP)
+            except Exception:
+                pass
+
+    def resume(self):
+        for p in self._procs.values():
+            try:
+                p.send_signal(signal.SIGCONT)
+            except Exception:
+                pass
+
     def close(self):
         for p in self._procs.values():
             try:
+                # a SIGSTOPped process can't handle SIGTERM until continued —
+                # thaw first, then terminate, then REAP (terminate() alone
+                # leaves zombies) with a bounded wait + kill escalation.
+                p.send_signal(signal.SIGCONT)
                 p.terminate()
+                p.wait(timeout=1.5)
+            except subprocess.TimeoutExpired:
+                try:
+                    p.kill()
+                    p.wait(timeout=1.5)
+                except Exception:
+                    pass
             except Exception:
                 pass
         self._procs.clear()

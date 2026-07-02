@@ -83,6 +83,7 @@ class Pointer:
         self._mon_origin = (mx, my)
         rx, ry = self._last_signal_raw
         self._comfort.reseat(rx, ry, mw, mh)
+        self._recal.set_bounds(sw, sh)   # rescale the diag/12 consistency gate
         self.ox = min(self.sw - 1.0, max(0.0, self.ox))
         self.oy = min(self.sh - 1.0, max(0.0, self.oy))
 
