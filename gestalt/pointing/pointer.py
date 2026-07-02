@@ -81,6 +81,7 @@ class Pointer:
         # cumulative focus-event counters (diagnose acquire/break churn — a healthy
         # session acquires ~once per aim; a flapping one breaks/re-acquires per frame)
         self._fev = {"as": 0, "ai": 0, "bd": 0, "bv": 0}  # settle/intent acq, dist/vanish break
+        self._focus_prev_d = None     # last distance to the focused target (directional break)
 
     def set_bounds(self, sw: int, sh: int, monitors=None):
         """Re-target the coordinate space after a display change (monitor
@@ -136,9 +137,20 @@ class Pointer:
             if self._focus_id is not None:
                 self._fev["bv"] += 1         # focused target vanished (tracker cull)
             self._focus_id = None
-        elif math.hypot(foc["cx"] - cx, foc["cy"] - cy) > self.cfg["focus_break_px"]:
-            self._focus_id, foc = None, None  # broke free (directed motion away)
-            self._fev["bd"] += 1
+            self._focus_prev_d = None
+        else:
+            d = math.hypot(foc["cx"] - cx, foc["cy"] - cy)
+            # DIRECTIONAL break: distance alone can't distinguish "sailing away"
+            # from "a pre-acquired target still far ahead" — an intent acquire
+            # lands with d > break_px by design, and a raw distance test broke it
+            # the very next frame (measured: acquire/break flapping toggling the
+            # pull). Break only when far AND the gap is GROWING (motion away).
+            receding = self._focus_prev_d is not None and d > self._focus_prev_d + 1.0
+            self._focus_prev_d = d
+            if d > self.cfg["focus_break_px"] and (receding or arrived):
+                self._focus_id, foc = None, None
+                self._focus_prev_d = None
+                self._fev["bd"] += 1
 
         if foc is None and arrived:           # acquire while settling (the classic path)
             best, nt = self.cfg["focus_acquire_px"], None
@@ -337,6 +349,14 @@ class Pointer:
 
         self._last_raw = (self.ox, self.oy)
         self._last_candidate = cand
+
+        # final on-screen clamp: AT-SPI emits boxes whose centroids can sit PAST
+        # the screen edge (provider accepts to −100), and magnetism happily pulls
+        # the cursor onto them — measured x=−35 in an edge-crawl session. An
+        # off-screen cursor also drags the overlay window across the output
+        # boundary every frame, which the compositor answers with flicker.
+        fx = min(self.sw - 1.0, max(0.0, fx))
+        fy = min(self.sh - 1.0, max(0.0, fy))
 
         return PointerState(
             fx, fy, speed_pxs, radius, snap_role, arrived, len(targets),

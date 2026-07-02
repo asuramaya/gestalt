@@ -366,7 +366,13 @@ class ComfortMapper:
             elif drive <= 0.0 or r < -self._EDGE_RATE_EPS:
                 off -= off * min(1.0, self.edge_decay * dt)
             # else: parked at the extreme — hold the glide so the corner stays put
-            off = min(half, max(-half, off))
+            # Bound the glide to its JOB: covering the (1−reach) travel that
+            # position control gives up, ×1.5 headroom. The old ±half clamp let
+            # a sustained push saturate the offset to HALF THE SCREEN (measured
+            # ±2208px on a 3840 desktop) — an enormous displacement that then
+            # dominated near-edge aiming.
+            cap = 1.5 * (1.0 - reach) * half
+            off = min(cap, max(-cap, off))
         else:
             off = 0.0
         return min(extent - 1.0, max(0.0, pos + off)), off

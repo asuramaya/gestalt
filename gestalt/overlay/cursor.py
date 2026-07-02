@@ -128,7 +128,12 @@ class Cursor:
             pass
 
     def move(self, x: float, y: float, snapped: bool = False, precision: bool = False):
-        self._win.position = (int(x - SIZE / 2), int(y - SIZE / 2))
+        # keep the window FULLY inside the output: a small always-on-top window
+        # straddling the screen boundary, repositioned every frame, makes some
+        # compositor/panel paths (PSR selective update) flicker the whole screen.
+        wx = max(0, min(self.sw - SIZE, int(x - SIZE / 2)))
+        wy = max(0, min(self.sh - SIZE, int(y - SIZE / 2)))
+        self._win.position = (wx, wy)
         # periodically re-assert stacking so transient windows don't cover us
         now = time.time()
         if self._xwin and now - self._last_raise > 0.25:
