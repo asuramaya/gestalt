@@ -117,6 +117,12 @@ class Pointer:
     def recal_reset(self):
         self._recal.reset()
 
+    def envelope_reset(self):
+        """Re-seed the comfort envelope (qx/qy/neutral/offsets) from the priors —
+        the manual fix for an outlier-stretched range (see Engine.envelope_reset).
+        Cursor jumps to the re-seeded centre, same as a monitor reseat."""
+        self._comfort.reset()
+
     def _catch_radius(self, speed_pxs: float) -> float:
         """DynaSpot: catch-radius grows with cursor speed, collapses to a point
         when stopped (so you can park in empty space without a mode switch)."""

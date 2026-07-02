@@ -626,6 +626,16 @@ class Engine:
         if self._pointer:
             self._pointer.recal_reset()
 
+    def envelope_reset(self):
+        """Manual escape hatch for the comfort envelope's outlier sensitivity: a
+        single big reach can stretch qx/qy far out (τ=0.95 expand is fast BY
+        DESIGN — 'never clip a reach'), and every typical reach afterward then
+        falls short of that inflated target until the slow contract (τ=0.05)
+        relaxes it back — which can take minutes. Unlike `recenter` (position/
+        neutral only), this re-seeds the whole learned range from the priors."""
+        if self._pointer:
+            self._pointer.envelope_reset()
+
     def switch_monitor(self, target):
         """Manual active-monitor switch (CLI fallback so you're never stranded)."""
         return self._pointer.switch_monitor(target) if self._pointer else None

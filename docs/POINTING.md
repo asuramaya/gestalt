@@ -100,7 +100,9 @@ pinch-down, **freeze the cursor position** until release so the head jerk that
 accompanies the pinch can't slip the cursor off-target, and **reject the click if
 head angular velocity is above a threshold** (you're still moving, not aiming).
 The direct fix for the prototype's "1-in-5 clicks land" problem.
-→ `commit_freeze_ms`, `commit_velocity_gate`.
+→ `commit_velocity_gate` (the freeze duration was a separate `commit_freeze_ms`
+knob, removed 2026-07 as dead code — nothing consumed it; the actual freeze is
+structural: `_reconcile_hold` holds position from press to release).
 
 ## Confirmation channel → **Gaze + Pinch / MAGIC**
 
@@ -218,7 +220,7 @@ drift correction" pill switch; recenter clears `bd`.
 | Can't lock on targets | DynaSpot area cursor | Chapuis CHI'09 | `dynaspot_*` |
 | Grabbed by wrong target | velocity-gated soft pull | Worden CHI'97, Bateman CHI'11 | `snap_pull`, `snap_velocity_gate` |
 | Lock sluggish / brutal break | drop lock; KTM arrival | Jacob CHI'90, Pasqual CHI'14 | (no lock) |
-| Click slips on pinch | Steady Clicks freeze + gate | Trewin ASSETS'06 | `commit_freeze_ms`, `commit_velocity_gate` |
+| Click slips on pinch | Steady Clicks freeze + gate | Trewin ASSETS'06 | `commit_velocity_gate` |
 | Pointing vs confirm split | Gaze+Pinch / MAGIC | Pfeuffer SUI'17, Zhai CHI'99 | (architecture) |
 | No a11y boxes (Warp) | hybrid CV detection | UIED FSE'20, OmniParser'24 | `providers` |
 
@@ -246,6 +248,17 @@ Hard-won fixes already in:
 - **Edge overscan** (`comfort_overscan` 0.15): map range beyond the edge so
   corners reach at ~90% of comfortable travel (eases the compound yaw+pitch
   corner posture).
+- **Outlier-stretched range → temporarily-unreachable edge (KNOWN, 2026-07).**
+  The τ asymmetry that makes the envelope forgiving ("never clip a reach") has a
+  cost: ONE big reach (deliberate or incidental) stretches `qlo`/`qhi` fast, and
+  every SMALLER reach afterward falls short of `f=1.0` until the slow contract
+  (τ=0.05) relaxes it back — minutes, not frames. Measured live: a session's
+  qlo/qhi asymmetry hit **13×** after one reach, then relaxed to near-symmetric
+  over ~7600 frames (~8 min) with no manual intervention — self-healing, but a
+  bad interim feel ("can't reach the right edge"). Manual fix: `gestaltctl
+  envelope reset` (or `{"cmd":"envelope","op":"reset"}`) re-seeds `qx/qy` +
+  neutral + all offsets from the priors — unlike `recenter` (position/neutral
+  only), this clears the learned RANGE. Cursor jumps to the re-seeded centre.
 - **Output stage (two, switchable).** Absolute high gain (~5600 px/signal-unit)
   amplifies pose noise (~45 px), so the px cursor needs an output smoother:
   - *(legacy)* **1€ smoother** (`comfort_smooth_mincut/beta`) — speed-adaptive.

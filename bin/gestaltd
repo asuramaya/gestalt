@@ -158,6 +158,13 @@ class Daemon:
                 self._apply()
                 return {"ok": True, "recalibrate": self.cfg["recalibrate"]}
             return {"ok": True}
+        if action == "envelope":
+            # distinct from "recal": that's the learned click-correction offset,
+            # this is the comfort-mode ROM range (qx/qy) — an outlier reach can
+            # stretch it for minutes; this is the on-demand fix (see engine.py).
+            if cmd.get("op", "reset") == "reset":
+                self._engine(lambda e: e.envelope_reset())
+            return {"ok": True, "envelope": "reset"}
         if action == "set":
             merged = dict(self.cfg)
             merged.update(cmd.get("values", {}))

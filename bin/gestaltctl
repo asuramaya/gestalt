@@ -11,6 +11,8 @@ Usage:
   gestaltctl calibrate [on|off]    # look-and-pinch calibration (generates clean labels)
   gestaltctl diag [on|off]         # toggle (or set) the diagnostics window
   gestaltctl recal [reset|on|off]  # reset / toggle the implicit recalibration
+  gestaltctl envelope reset        # re-seed the comfort ROM range from priors
+                                    #   (fixes a range stretched by one big reach)
   gestaltctl set <key> <value>     # value parsed as JSON, falls back to string
 """
 from __future__ import annotations
@@ -67,6 +69,8 @@ def main(argv):
     elif verb == "recal":
         op = argv[1] if len(argv) == 2 and argv[1] in ("reset", "on", "off") else "reset"
         print(json.dumps(send({"cmd": "recal", "op": op}), indent=2))
+    elif verb == "envelope":
+        print(json.dumps(send({"cmd": "envelope", "op": "reset"}), indent=2))
     elif verb == "monitor":
         target = argv[1] if len(argv) == 2 else "next"
         print(json.dumps(send({"cmd": "monitor", "target": target}), indent=2))
