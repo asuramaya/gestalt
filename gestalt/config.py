@@ -146,7 +146,15 @@ DEFAULTS = {
     # settles. Calibration-free: only iris dispersion matters, never position.
     "gaze_fixation": True,         # enable the gaze-fixation precision gate
     "gaze_fix_window": 6,          # frames of iris signal for the dispersion test
-    "gaze_fix_dispersion": 0.08,   # iris dispersion below this (eye-width units) = fixating
+    # SELF-CALIBRATING fixation threshold (the fixed 0.08 was measured stuck-ON on
+    # one session and stuck-OFF on another — see docs/POINTING.md). Fixation =
+    # dispersion < k × YOUR rolling-median dispersion, floored.
+    "gaze_fix_k": 0.6,             # fraction of your median dispersion = fixating
+    "gaze_fix_floor": 0.02,        # absolute threshold floor (a long stare collapses
+                                   #   the median; the floor stops gate chatter there)
+    "gaze_fix_baseline": 240,      # frames of dispersion history for the median
+                                   #   (~30s @8fps strobed; slow enough to ride out
+                                   #   a read/stare, fast enough to track lighting)
     "comfort_fix_gmax": 0.35,      # follow gmax while fully fixating (lower = finer approach)
     "comfort_fix_smooth": 0.2,     # engage slew toward fixation (per-frame; avoids snapping)
     # ---- stillness-freeze: lock the cursor when it SETTLES so rest drift stops
@@ -357,7 +365,9 @@ _RANGES = {
     "comfort_follow_gmax": (0.0, 1.0),
     "comfort_follow_k": (0.5, 6.0),
     "gaze_fix_window": (2, 30),
-    "gaze_fix_dispersion": (0.005, 0.5),
+    "gaze_fix_k": (0.1, 1.0),
+    "gaze_fix_floor": (0.0, 0.5),
+    "gaze_fix_baseline": (30, 1000),
     "comfort_fix_gmax": (0.0, 1.0),
     "comfort_fix_smooth": (0.01, 1.0),
     "comfort_freeze_floor": (0.0, 1.0),

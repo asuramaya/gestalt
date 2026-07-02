@@ -47,6 +47,7 @@ class HeadState:
     body: dict = field(default_factory=dict)     # body-compensator state (diagnostics)
     gaze: tuple[float, float] = (0.0, 0.0)       # iris-in-eye vector (head-relative)
     gaze_disp: float = 1.0                       # I-DT dispersion (low = eyes settled)
+    gaze_thr: float = 0.0                        # live self-calibrated fixation threshold
     fixating: bool = False                       # eyes locked on a target (precision cue)
     perioral: object = field(default=None)       # mouth/nose landmarks in head-local frame
     brow_lift: float = 0.0                        # eyebrow height above rest (head-local)
@@ -131,6 +132,7 @@ class HeadTracker:
         gx, gy, disp, fix = self._gaze.update(st.landmarks)
         st.gaze = (gx, gy)
         st.gaze_disp = disp
+        st.gaze_thr = self._gaze.thr
         st.fixating = fix
         # perioral (mouth/nose) landmarks in head-local frame — for the fine-pointing
         # experiment; logged by the recorder to measure resolution vs the head.

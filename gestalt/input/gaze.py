@@ -43,18 +43,36 @@ def _eye_gaze(lm, iris, c0, c1):
 class GazeTracker:
     def __init__(self, cfg: dict):
         self._win = None
+        self._base = None        # rolling dispersion history (the self-calibration)
+        self.thr = 0.0           # live fixation threshold — observable, like brow_thr
         self.apply_config(cfg)
 
     def apply_config(self, cfg: dict):
         self.enabled = cfg["gaze_fixation"]
         self.window = int(cfg["gaze_fix_window"])
-        self.dispersion = cfg["gaze_fix_dispersion"]
+        # SELF-CALIBRATING threshold: fixation = dispersion well below YOUR OWN
+        # typical dispersion (k × rolling median), not a hardcoded amplitude.
+        # Measured (2026-07, sessions 1782752796/1782780970): the old fixed 0.08
+        # sat BELOW one session's median noise (gate stuck ~ON: fix 0.95 still /
+        # 0.68 moving) and ABOVE another's (stuck ~OFF) — a fixed value lands on
+        # the wrong side of the noise depending on rig/light. Same lesson as the
+        # brow clutch: calibrate to the user's live signal, keep a floor.
+        self.k = cfg["gaze_fix_k"]
+        self.floor = cfg["gaze_fix_floor"]
+        base = int(cfg["gaze_fix_baseline"])
         if self._win is None:
             self._win = deque(maxlen=self.window)
         elif self._win.maxlen != self.window:
             self._win = deque(self._win, maxlen=self.window)
+        if self._base is None:
+            self._base = deque(maxlen=base)
+        elif self._base.maxlen != base:
+            self._base = deque(self._base, maxlen=base)
 
     def reset(self):
+        # face lost: drop only the SHORT I-DT window (it must re-settle clean).
+        # The dispersion baseline is the user's noise character — it survives
+        # brief losses so the threshold doesn't have to re-learn from scratch.
         self._win.clear()
 
     def update(self, landmarks) -> tuple[float, float, float, bool]:
@@ -72,4 +90,15 @@ class GazeTracker:
         xs = [p[0] for p in self._win]
         ys = [p[1] for p in self._win]
         disp = (max(xs) - min(xs)) + (max(ys) - min(ys))   # I-DT dispersion
-        return gx, gy, disp, disp < self.dispersion
+        self._base.append(disp)
+        # need the baseline partly filled before trusting it (a cold start can't
+        # fire on a couple of frames); until then the gate stays safely open.
+        if len(self._base) < max(10, self._base.maxlen // 3):
+            return gx, gy, disp, False
+        med = sorted(self._base)[len(self._base) // 2]
+        # k × median sits in the gap between the fixation cluster and saccades in
+        # a normal use mix. Known trade-off: a LONG steady stare collapses the
+        # median toward fixation-level dispersion and the gate drops out — the
+        # cost is only that gmax stays high; the floor keeps it from chattering.
+        self.thr = max(self.floor, self.k * med)
+        return gx, gy, disp, disp < self.thr

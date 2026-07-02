@@ -258,16 +258,22 @@ is watched for a **fixation**: when it goes still over a short window the eyes
 have locked a target, which in eye-head coordination leads the head by ~200ms
 (Sidenmark & Gellersen TOCHI'19). On fixation the follow's effective `gmax` lerps
 down toward `comfort_fix_gmax` (0.35), so the head's directed approach
-auto-gentles *before* it settles. Knobs: `gaze_fix_dispersion` 0.08 (set it in the
-gap between fixation ~0.02–0.05 and saccade ~0.15+, watch `status().gaze_disp`),
-`comfort_fix_gmax`, `comfort_fix_smooth`. Toggle `gaze_fixation`. Honest limit:
-gaze can't be a *position* signal (fovea ~1°, webcam ~2-4° with the head moving),
-so it only ever gates — never points. CAVEAT (measured 2026-06 on a 235k-frame
-session): this gate runs **stuck ~ON** (`fix`≈1.0 at rest, 0.71 moving) — its
-hardcoded `0.08` dispersion threshold doesn't fit the user's iris noise, so almost
-everything reads as "fixating" and it just caps gain instead of discriminating.
-TODO: self-calibrate it (`K × MAD` of the user's own dispersion, like the brow
-clutch) or retire it now that the stillness-freeze owns settle precision.
+auto-gentles *before* it settles. The threshold is **SELF-CALIBRATING** (2026-07):
+fixation = dispersion < `gaze_fix_k` (0.6) × your rolling-median dispersion
+(`gaze_fix_baseline` frames), floored at `gaze_fix_floor` — watch
+`status().gaze_disp` vs `status().gaze_thr`. Knobs: `gaze_fix_k`,
+`gaze_fix_floor`, `gaze_fix_baseline`, `comfort_fix_gmax`, `comfort_fix_smooth`.
+Toggle `gaze_fixation`. Honest limit: gaze can't be a *position* signal (fovea
+~1°, webcam ~2-4° with the head moving), so it only ever gates — never points.
+HISTORY: the original hardcoded `gaze_fix_dispersion` 0.08 was measured (2026-06
+235k-frame session; re-confirmed 2026-07 on sessions 1782752796/1782780970)
+sitting BELOW one session's median iris noise (gate stuck ~ON: `fix` 0.95 at
+rest, 0.68 moving — it just capped gain instead of discriminating) and ABOVE
+another's (stuck ~OFF) — a fixed amplitude lands on the wrong side of the noise
+depending on rig/light/distance, the same failure the brow clutch hit before its
+K×MAD fix. Known trade-off of the median form: a long steady stare collapses the
+median and the gate drops out (cost: `gmax` just stays high; the floor prevents
+chatter).
 
 ### Stillness-freeze (BUILT) — the cursor-won't-settle fix
 
