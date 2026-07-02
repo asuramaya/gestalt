@@ -360,6 +360,17 @@ by motion (don't eat fine aim), decay always-on inside (can leave the corner).
 Threaded `head.speed` → `comfort.map` → `_axis` (and the coast path via
 `_last_speed`).
 
+#### RubberEdge directionality (2026-07: "impossible to aim slightly inside the edge")
+The speed gate above was still DIRECTION-BLIND: retreating from an overshoot is
+also fast head motion, so while the deflection remained past `edge_start` the
+glide kept firing OUTWARD **against** the user's inward pull — elements in the
+`fr∈[edge_start, 1]` band (slightly inside the edge) were nearly unaimable, and
+aim-wobble around `edge_start` toggled grow/decay into visible oscillation. Fix:
+`_axis` tracks d(fr)/dt per axis (EMA'd; tremor alternates sign so it sits ≈0):
+pushing out past `edge_start` → glide grows; pulling in (or back inside) → glide
+decays; holding (|rate| ≤ eps) → glide FREEZES, so a corner park stays parked.
+The speed gate `m` still scales the grow branch.
+
 ### Multi-monitor crossing (comfort, absolute mode)
 Comfort maps to ONE monitor (stretching a fixed neck ROM across stacked screens
 doubles gain and forces strained up-gaze). You cross to a neighbour by

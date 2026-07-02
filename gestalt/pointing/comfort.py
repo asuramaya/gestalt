@@ -220,6 +220,8 @@ class ComfortMapper:
         self._decel_g = 1.0      # last decel gain scale (observability)
         self._eoff_x = 0.0       # elastic rate-assist offset (px), per axis
         self._eoff_y = 0.0
+        self._fr_prev = {}       # per-axis last deflection fraction (edge directionality)
+        self._fr_rate = {}       # per-axis EMA of d(fr)/dt (+ = pushing toward the edge)
         self._poff_x = 0.0       # precision-lens persistent offset (px), per axis
         self._poff_y = 0.0
         self._prec_prev = False  # precision engaged last frame (edge detect)
@@ -254,6 +256,8 @@ class ComfortMapper:
         self.parked = False
         self._follow.cur = None
         self._eoff_x = self._eoff_y = 0.0
+        self._fr_prev.clear()
+        self._fr_rate.clear()
         self._poff_x = self._poff_y = 0.0
         self._prec_prev = False
         self._prec_ref = None
@@ -315,7 +319,12 @@ class ComfortMapper:
         self.qy_hi = max(self.qy_hi, self.ny + floor)
         self.qy_lo = min(self.qy_lo, self.ny - floor)
 
-    def _axis(self, x, n, qlo, qhi, extent, dt, off, speed):
+    # deflection-fraction/s below which you're HOLDING at the edge, not moving.
+    # Tremor alternates sign so the rate EMA sits near 0 (freeze); a deliberate
+    # push or retreat is sustained and clears it in either direction.
+    _EDGE_RATE_EPS = 0.04
+
+    def _axis(self, x, n, qlo, qhi, extent, dt, off, speed, key):
         center = extent / 2.0
         d = x - n
         if d >= 0:
@@ -335,25 +344,28 @@ class ComfortMapper:
         reach = self.edge_reach if self.edge_assist else 1.0
         pos = center - sign * (f * reach) * half
         if self.edge_assist:
-            # The edge-assist is a MOVING phenomenon: only a fast, directed push
-            # toward the extreme should glide the cursor to the corner. A slow fine
-            # aim near the edge must leave it untouched — and FROZEN, so any prior
-            # glide holds in place — otherwise the edge "eats" precise edge-element
-            # aims. m ramps 0→1 over [0.35·edge_speed .. edge_speed]; at m≈0 the
-            # offset neither grows nor decays, so position control (low gain) alone
-            # places the cursor and you can aim onto an edge element.
+            # DIRECTION-AWARE glide (the "edge eats aims slightly inside it" fix):
+            # the speed gate alone is direction-blind — retreating from an
+            # overshoot is also fast head motion, so the glide kept firing
+            # OUTWARD while the user pulled INWARD, making elements in the
+            # fr∈[edge_start,1] band nearly unaimable. Track d(fr)/dt (EMA):
+            #   pushing out (rate > +eps, past edge_start) → grow the glide;
+            #   pulling in  (rate < −eps, or back inside)  → decay it;
+            #   holding     (|rate| ≤ eps)                 → freeze (corner parks).
+            prev = self._fr_prev.get(key)
+            rate = ((fr - prev) / max(dt, 1e-4)) if prev is not None else 0.0
+            r = self._fr_rate.get(key, 0.0)
+            r += 0.35 * (rate - r)
+            self._fr_rate[key] = r
+            self._fr_prev[key] = fr
             lo = 0.35 * self.edge_speed
             m = min(1.0, max(0.0, (speed - lo) / max(self.edge_speed - lo, 1e-6)))
             drive = min(1.5, max(0.0, (fr - self.edge_start) / max(1.0 - self.edge_start, 1e-4)))
-            if drive > 0.0:
-                # GLIDE outward only on a fast directed push (gated) — so a slow
-                # fine aim near the edge isn't dragged into the corner.
+            if drive > 0.0 and r > self._EDGE_RATE_EPS:
                 off += -sign * self.edge_rate * (drive ** self.edge_expo) * m * dt
-            else:
-                # DECAY back whenever the deflection returns inside the extreme —
-                # NOT motion-gated, so you can fine-aim your way off the corner
-                # (a frozen offset there was the "stuck on the edge" feel).
+            elif drive <= 0.0 or r < -self._EDGE_RATE_EPS:
                 off -= off * min(1.0, self.edge_decay * dt)
+            # else: parked at the extreme — hold the glide so the corner stays put
             off = min(half, max(-half, off))
         else:
             off = 0.0
@@ -387,9 +399,9 @@ class ComfortMapper:
     def map(self, sigx: float, sigy: float, dt: float, speed: float = 0.0,
             precision: bool = False) -> tuple[float, float]:
         mx, self._eoff_x = self._axis(
-            sigx, self.nx, self.qx_lo, self.qx_hi, self.sw, dt, self._eoff_x, speed)
+            sigx, self.nx, self.qx_lo, self.qx_hi, self.sw, dt, self._eoff_x, speed, "x")
         my, self._eoff_y = self._axis(
-            sigy, self.ny, self.qy_lo, self.qy_hi, self.sh, dt, self._eoff_y, speed)
+            sigy, self.ny, self.qy_lo, self.qy_hi, self.sh, dt, self._eoff_y, speed, "y")
         self._t += max(dt, 1e-4)
         if self.use_follow:
             # fixation lerps the ceiling down toward fix_gmax (finer approach).

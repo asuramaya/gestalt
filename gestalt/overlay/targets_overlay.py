@@ -68,7 +68,8 @@ class TargetOverlay:
         self._ren = Renderer(self._win)
         self._xd = None
         self._xwin = None
-        self._last_sig = None         # skip redraw/reshape when boxes are unchanged
+        self._last_sig = None         # skip redraw when boxes AND focus are unchanged
+        self._last_shape = None       # skip the XShape op when geometry alone is unchanged
         self._make_click_through()
 
     def _make_click_through(self):
@@ -111,11 +112,16 @@ class TargetOverlay:
                 (int(cx) - 2, int(cy) - 2, 4, 4)]               # centroid
 
     def render(self, targets, focus_id=None):
-        # Redraw/reshape ONLY when the boxes change — the targets refresh ~1/s, so
-        # re-shaping a full-desktop window every frame was needlessly forcing the
-        # compositor to recomposite the whole screen (the GPU spike).
-        sig = (focus_id, tuple((t.get("id"), int(t.get("cx", 0)), int(t.get("cy", 0)),
-                                int(t.get("w", 0)), int(t.get("h", 0))) for t in targets))
+        # Redraw only when boxes or focus change; RESHAPE only when the GEOMETRY
+        # changes. The shape must NOT depend on focus (constant border thickness,
+        # focus shown by colour alone): focus churns per-frame while aiming, and
+        # re-shaping a full-desktop always-on-top window per frame forces the
+        # compositor to recomposite the whole screen — the "screen flickers near
+        # the edge" report. A recolour is a plain redraw; the X shape op is the
+        # expensive part and now fires only when targets actually move.
+        shape_sig = tuple((int(t.get("cx", 0)), int(t.get("cy", 0)),
+                           int(t.get("w", 0)), int(t.get("h", 0))) for t in targets)
+        sig = (focus_id, tuple(t.get("id") for t in targets), shape_sig)
         if sig == self._last_sig:
             return
         self._last_sig = sig
@@ -131,11 +137,12 @@ class TargetOverlay:
             w, h = t.get("w", 40) or 40, t.get("h", 40) or 40
             focused = t.get("id") is not None and t.get("id") == focus_id
             col = _FOCUS if focused else _role_color(t.get("role"))
-            for (rx, ry, rw, rh) in self._outline(cx, cy, w, h, 3 if focused else 2):
+            for (rx, ry, rw, rh) in self._outline(cx, cy, w, h, 2):
                 rw, rh = max(1, rw), max(1, rh)
                 shape_rects.append({"x": rx, "y": ry, "width": rw, "height": rh})
                 draws.append((pygame.Rect(rx, ry, rw, rh), col))
-        if self._xwin is not None:
+        if self._xwin is not None and shape_sig != self._last_shape:
+            self._last_shape = shape_sig
             try:
                 self._xwin.configure(x=0, y=0)            # hold the origin (anti-drift)
                 self._xwin.shape_rectangles(
