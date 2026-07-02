@@ -37,7 +37,9 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 echo "-- building venv -> $PREFIX/venv (Python 3.12 via uv)"
 mkdir -p "$PREFIX/bin"
-uv venv --python 3.12 "$PREFIX/venv"
+# --clear: a reinstall rebuilds the venv from scratch (uv refuses to reuse an
+# existing one, and set -e would abort the whole install before the code copy)
+uv venv --clear --python 3.12 "$PREFIX/venv"
 uv pip install --python "$PREFIX/venv/bin/python" \
   mediapipe opencv-python numpy pygame evdev python-xlib
 
