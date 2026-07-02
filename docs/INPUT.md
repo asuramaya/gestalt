@@ -4,6 +4,21 @@ How a hand shape becomes a click/drag, and how the cursor is drawn. Code:
 `gestalt/gesture/pinch.py`, `gestalt/gesture/gestures.py`, `gestalt/gesture/inject.py`,
 `gestalt/overlay/cursor.py`, `gestalt@asuramaya/extension.js` (ShellCursor).
 
+## Hand detection confidence (`hand_min_detection/presence/tracking`)
+
+Upstream of BOTH modes below: MediaPipe's `GestureRecognizer` has to see a hand
+at all before pinch/gesture geometry runs. A hand far from the camera or at an
+off-axis angle is fewer pixels and a less canonical shape — the same condition
+`face_min_detection/presence/tracking` (see POINTING.md) exist to survive for
+the face, at deliberately LOW defaults. The hand path never got the same
+treatment: hardcoded at `0.3/0.3/0.3` until 2026-07 (an oversight, not a
+tradeoff — reported as "struggles from weird angles or odd distances" arming
+the hand). Now exposed, default `0.15/0.15/0.15`, hot-settable (`set
+hand_min_detection 0.1` takes effect immediately, no restart — same pattern as
+`camera`). Raise them back if a lower floor starts false-triggering on
+non-hand shapes; MediaPipe's own gesture-confidence gate (`gesture_confidence`,
+gestures mode only) is a second, independent filter downstream of this one.
+
 ## Two gesture modes (`gesture_mode: pinch | gestures`)
 
 ### pinch (`pinch.py`) — the haptic default

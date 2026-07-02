@@ -282,6 +282,16 @@ DEFAULTS = {
     "commit_velocity_gate": 0.012, # reject pinch-click above this head speed
 
     # ---- gestures ----------------------------------------------------------
+    # MediaPipe GestureRecognizer hand-detection confidences. These gate whether
+    # a hand is seen AT ALL, upstream of pinch/gesture geometry — a hand far from
+    # the camera or at an off-axis angle is fewer pixels and a less canonical
+    # shape, exactly the condition the (tunable, LOW-by-default) face confidences
+    # above exist to survive. Hardcoded at 0.3/0.3/0.3 until 2026-07 (an
+    # asymmetry with the face path — never extended, not a deliberate choice);
+    # now exposed and lowered so a hand at range/angle isn't simply invisible.
+    "hand_min_detection": 0.15,    # to first acquire a hand
+    "hand_min_presence": 0.15,     # to believe a hand is still present
+    "hand_min_tracking": 0.15,     # to keep tracking it frame-to-frame (anti-flicker)
     "pinch_close": 0.55,           # thumb-tip distance / palm to fire
     "pinch_rearm": 0.64,           # must re-open past this before next fire
     "pinch_confirm_frames": 2,     # debounce
@@ -345,6 +355,9 @@ _RANGES = {
     "face_min_detection": (0.05, 0.9),
     "face_min_presence": (0.05, 0.9),
     "face_min_tracking": (0.05, 0.9),
+    "hand_min_detection": (0.05, 0.9),
+    "hand_min_presence": (0.05, 0.9),
+    "hand_min_tracking": (0.05, 0.9),
     "coast_predict": (0.0, 1.0),
     "monitor_cross_deg": (10.0, 60.0),
     "monitor_switch_cooldown": (0.1, 3.0),

@@ -136,11 +136,23 @@ class Engine:
         self._last_hand = None
         self.quit_requested = False
 
+    def _make_grec(self):
+        """(Re)create the hand GestureRecognizer — split out so hand_min_* can be
+        hot-applied (apply_config) without a full engine restart, same pattern as
+        the camera/provider knobs."""
+        from mediapipe.tasks import python as mp_python
+        from mediapipe.tasks.python import vision
+        self._grec = vision.GestureRecognizer.create_from_options(
+            vision.GestureRecognizerOptions(
+                base_options=mp_python.BaseOptions(model_asset_path=_GESTURE_MODEL),
+                running_mode=vision.RunningMode.VIDEO, num_hands=1,
+                min_hand_detection_confidence=self.cfg["hand_min_detection"],
+                min_hand_presence_confidence=self.cfg["hand_min_presence"],
+                min_tracking_confidence=self.cfg["hand_min_tracking"]))
+
     def open(self):
         import cv2
         import mediapipe as mp  # noqa: F401
-        from mediapipe.tasks import python as mp_python
-        from mediapipe.tasks.python import vision
 
         from gestalt.gesture import GestureDetector, Injector, PinchDetector
         from gestalt.input import HeadTracker
@@ -155,13 +167,7 @@ class Engine:
         self._open_camera()
 
         self._head = HeadTracker(self.cfg)
-        self._grec = vision.GestureRecognizer.create_from_options(
-            vision.GestureRecognizerOptions(
-                base_options=mp_python.BaseOptions(model_asset_path=_GESTURE_MODEL),
-                running_mode=vision.RunningMode.VIDEO, num_hands=1,
-                min_hand_detection_confidence=0.3,
-                min_hand_presence_confidence=0.3,
-                min_tracking_confidence=0.3))
+        self._make_grec()
 
         self._monitors = Monitors()                    # virtual desktop + per-monitor rects
         self._overlay = Cursor()                       # creates the window
@@ -676,6 +682,8 @@ class Engine:
 
     def apply_config(self, cfg: dict):
         old_cam = {k: self.cfg.get(k) for k in ("camera", "cam_width", "cam_height", "cam_fps")}
+        old_hand = {k: self.cfg.get(k)
+                   for k in ("hand_min_detection", "hand_min_presence", "hand_min_tracking")}
         # the tuning knobs ride into the providers via env at SPAWN time
         # (registry.start), so a hot-set of any of them is silently ignored
         # unless the subprocesses respawn — restart on those changes too.
@@ -691,6 +699,11 @@ class Engine:
         # to the IR node without a service restart).
         if self._cap is not None and any(old_cam[k] != cfg.get(k) for k in old_cam):
             self._open_camera()
+        # hand-detection confidences are baked into the GestureRecognizer at
+        # creation (MediaPipe has no live setter) — recreate it, same reasoning
+        # as the camera reopen above.
+        if self._grec is not None and any(old_hand[k] != cfg.get(k) for k in old_hand):
+            self._make_grec()
         # provider set or spawn-time tuning changed -> restart + drop stale tracks
         if self._targets and any(old_prov[k] != cfg.get(k) for k in prov_keys):
             self._targets.close()
