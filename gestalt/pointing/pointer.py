@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from ..targets.resolve import resolve_target
 from .comfort import ComfortMapper
 from .endpoint import EndpointPredictor, TargetPosterior
 from .neutral import NeutralManager
@@ -159,11 +160,7 @@ class Pointer:
                 self._fev["bd"] += 1
 
         if foc is None and arrived:           # acquire while settling (the classic path)
-            best, nt = self.cfg["focus_acquire_px"], None
-            for tg in targets:
-                d = math.hypot(tg["cx"] - cx, tg["cy"] - cy)
-                if d < best:
-                    best, nt = d, tg
+            nt = resolve_target(cx, cy, targets, self.cfg["focus_acquire_px"])
             if nt is not None:
                 self._focus_id, foc = nt.get("id"), nt
                 self._fev["as"] += 1
@@ -188,12 +185,11 @@ class Pointer:
 
     def _soft_pull(self, cx, cy, targets, speed_pxs, arrived, radius):
         """Legacy memoryless magnetism (kept for A/B via focus_acquire=false):
-        velocity-gated soft pull toward the nearest centroid in the catch-radius."""
-        cand, best = None, radius
-        for tg in targets:
-            d = math.hypot(tg["cx"] - cx, tg["cy"] - cy)
-            if d < best:
-                best, cand = d, tg
+        velocity-gated soft pull toward the nearest centroid in the catch-radius.
+        Candidate search shares resolve_target with _focus_magnetism (identical
+        nearest-in-radius math, deduplicated) — the A/B differentiator is
+        everything AROUND the candidate below (the gate + pull), unchanged."""
+        cand = resolve_target(cx, cy, targets, radius)
         fx, fy, snap_role = cx, cy, None
         if cand is not None:
             gate = (self._peak > MIN_PEAK_PXS

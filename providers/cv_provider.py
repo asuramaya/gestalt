@@ -209,13 +209,13 @@ def main():
                     x, y, w_, h_ = int(x * inv), int(y * inv), int(w_ * inv), int(h_ * inv)
                     targets.append({"cx": co.x + x + w_ // 2, "cy": co.y + y + h_ // 2,
                                     "x": co.x + x, "y": co.y + y, "w": w_, "h": h_,
-                                    "role": "pane", "source": "cv"})
+                                    "role": "pane", "source": "cv", "name": ""})
                 for (cx, cy, w_, h_, x, y) in merge(widgets(g, gw, gh)):
                     cx, cy = int(cx * inv), int(cy * inv)
                     x, y, w_, h_ = int(x * inv), int(y * inv), int(w_ * inv), int(h_ * inv)
                     targets.append({"cx": co.x + cx, "cy": co.y + cy,
                                     "x": co.x + x, "y": co.y + y, "w": w_, "h": h_,
-                                    "role": "widget", "source": "cv"})
+                                    "role": "widget", "source": "cv", "name": ""})
             write(targets)
         except Exception as e:
             write([])

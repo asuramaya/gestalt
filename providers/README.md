@@ -19,11 +19,16 @@ every `provider_poll_ms` with:
 
 ```json
 {"targets": [{"cx": 1920, "cy": 540, "x": 1900, "y": 520, "w": 40, "h": 40,
-              "role": "push button", "source": "atspi"}]}
+              "role": "push button", "source": "atspi", "name": "Export"}]}
 ```
 
 `cx,cy` is the centroid the pointer snaps to. The daemon's target registry merges
-every provider's file and dedupes overlapping boxes.
+every provider's file and dedupes overlapping boxes. `name` is the element's
+accessible label (AT-SPI only, capped at 80 chars; CV targets always emit `""`
+since pixel detection has no semantic label) — geometry-only consumers (the
+human pointer) ignore it; a name-aware consumer (`targets/resolve.py`'s
+`name_hint`, e.g. an agent asking to click "the Export button") uses it to
+disambiguate targets that sit at nearly the same point.
 
 ## Providers
 

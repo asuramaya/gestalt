@@ -114,9 +114,17 @@ def collect(node, out, depth=0):
             e = node.get_extents(Atspi.CoordType.SCREEN)
             # reject zero/negative and clearly container-sized boxes (not a target)
             if 0 < e.width < 2400 and 0 < e.height < 1000 and e.x > -100 and e.y > -100:
+                # own try/except: a get_name() failure must never drop an
+                # otherwise-good target (geometry+role outweigh the label) —
+                # the outer try/except would silently do exactly that.
+                try:
+                    name = (node.get_name() or "")[:80]
+                except Exception:
+                    name = ""
                 out.append({"cx": e.x + e.width // 2, "cy": e.y + e.height // 2,
                             "x": e.x, "y": e.y, "w": e.width, "h": e.height,
-                            "role": node.get_role_name(), "source": "atspi"})
+                            "role": node.get_role_name(), "source": "atspi",
+                            "name": name})
     except Exception:
         pass
     try:

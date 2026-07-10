@@ -102,6 +102,27 @@ disappearance (`target_max_miss`), emit stable targets with **durable IDs**. Run
 at the read cadence (every 10 frames). The durable IDs are what let the focus state
 machine commit without flip-flopping.
 
+## The `name` field + shared resolver (`targets/resolve.py`) — 2026-07
+
+Every target's `name` (the AT-SPI accessible label; CV targets always emit `""`
+— pixel detection has no semantic label) exists for a reason distinct from
+magnetism: **Gestalt as dual-use, a human head-pointer and an agent's hands
+sharing the same perception + actuation substrate** (see the design discussion
+that motivated this — the two problems differ in noise SOURCE, not in what
+they need solved: physical aim tremor vs. a vision model's imprecise
+coordinate guess, both needing "this approximate point → the real element it
+means"). `resolve_target(x, y, targets, radius, name_hint=None)` is that one
+shared primitive — `_focus_magnetism`'s settle-time acquire and `_soft_pull`'s
+legacy candidate search both call it now (previously two separately-written,
+textually-near-identical nearest-scans). The human pointer always passes
+`name_hint=None`, which reproduces the original pure-geometry behaviour
+exactly — zero behaviour change for the pointer, verified by simulation. An
+agent-facing consumer would pass a real hint (e.g. resolve "the Export
+button") to disambiguate targets sharing a point that geometry alone can't
+tell apart. Deliberately NOT merged with `endpoint.py`'s `TargetPosterior` —
+that one solves a different problem (a Gaussian posterior over a *predicted*
+future point, with a click-history prior) and stays its own thing.
+
 ## Focus-hysteresis magnetism (`Pointer._focus_magnetism`) — the iPad feel
 
 Pixel/point "soft pull toward nearest centroid" jiggles and never commits. The iPad

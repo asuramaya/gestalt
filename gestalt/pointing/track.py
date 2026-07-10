@@ -64,6 +64,8 @@ class TargetTracker:
                 tr["h"] += a * (float(r.get("h", tr["h"])) - tr["h"])
                 tr["role"] = r.get("role", tr["role"])
                 tr["source"] = r.get("source", tr["source"])
+                # not EMA'd (categorical text, not a number) — take the latest
+                tr["name"] = r.get("name", tr.get("name", ""))
                 tr["hits"] += 1
                 tr["miss"] = 0
             else:
@@ -77,6 +79,7 @@ class TargetTracker:
                 "id": self._next_id, "cx": float(r["cx"]), "cy": float(r["cy"]),
                 "w": float(r.get("w", 40)), "h": float(r.get("h", 40)),
                 "role": r.get("role"), "source": r.get("source"),
+                "name": r.get("name", ""),
                 "hits": 1, "miss": 0,
             })
             self._next_id += 1
@@ -86,7 +89,7 @@ class TargetTracker:
 
         # 4. emit only confirmed tracks (appearance debounce)
         return [{"id": t["id"], "cx": t["cx"], "cy": t["cy"], "w": t["w"], "h": t["h"],
-                 "role": t["role"], "source": t["source"]}
+                 "role": t["role"], "source": t["source"], "name": t.get("name", "")}
                 for t in self._tracks if t["hits"] >= self.min_hits]
 
     def state(self) -> dict:

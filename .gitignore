@@ -6,3 +6,6 @@ dist/
 # the bundled venv is built by install.sh, never committed
 venv/
 .venv/
+# local Claude Code / MCP tooling config — machine-specific, not project code
+.claude/
+.mcp.json
