@@ -43,6 +43,49 @@ def _inside_any(cx, cy, boxes, margin: int = 8) -> bool:
     return False
 
 
+def merge_provider_files(files: dict[str, str]) -> list[dict]:
+    """Merge every provider's current boxes from their JSON files. AT-SPI is
+    AUTHORITATIVE: it gives exact, stable, semantic rects from the app's own
+    widget tree, so a CV box (a pixel guess) landing inside an AT-SPI box is
+    dropped — CV only survives where AT-SPI is silent (Warp panes, canvases).
+    This is what kills CV's jitter/hallucinations wherever accessibility
+    actually speaks.
+
+    Pulled out of Registry.read() (2026-07) so a SEPARATE process — the MCP
+    server, which must never spawn its own competing atspi/cv subprocesses —
+    can read the SAME live files the running gestaltd already maintains,
+    rather than re-polling AT-SPI a second time from a second process."""
+    merged: list[dict] = []
+    seen: set[tuple[int, int]] = set()
+    atspi_boxes: list[tuple] = []
+    # process AT-SPI first so its boxes are known when we vet CV boxes
+    names = sorted(files, key=lambda n: 0 if n == "atspi" else 1)
+    for name in names:
+        try:
+            with open(files[name]) as f:
+                items = json.load(f).get("targets", [])
+        except (OSError, ValueError):
+            continue
+        for tg in items:
+            try:
+                cx, cy = tg["cx"], tg["cy"]
+                key = (round(cx / 12), round(cy / 12))   # ~12px grid
+            except (KeyError, TypeError):
+                continue
+            if key in seen:
+                continue
+            if tg.get("source") == "cv" and _inside_any(cx, cy, atspi_boxes):
+                continue                             # AT-SPI already owns this spot
+            seen.add(key)
+            merged.append(tg)
+            if name == "atspi":
+                try:
+                    atspi_boxes.append((tg["x"], tg["y"], tg["w"], tg["h"]))
+                except (KeyError, TypeError):
+                    pass
+    return merged
+
+
 class Registry:
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -71,40 +114,8 @@ class Registry:
                 sys.stderr.write(f"[targets] provider {name} failed to start: {e}\n")
 
     def read(self) -> list[dict]:
-        """Merge every provider's current boxes. AT-SPI is AUTHORITATIVE: it gives
-        exact, stable, semantic rects from the app's own widget tree, so a CV box
-        (a pixel guess) landing inside an AT-SPI box is dropped — CV only survives
-        where AT-SPI is silent (Warp panes, canvases). This is what kills CV's
-        jitter/hallucinations wherever accessibility actually speaks."""
-        merged: list[dict] = []
-        seen: set[tuple[int, int]] = set()
-        atspi_boxes: list[tuple] = []
-        # process AT-SPI first so its boxes are known when we vet CV boxes
-        names = sorted(self._files, key=lambda n: 0 if n == "atspi" else 1)
-        for name in names:
-            try:
-                with open(self._files[name]) as f:
-                    items = json.load(f).get("targets", [])
-            except (OSError, ValueError):
-                continue
-            for tg in items:
-                try:
-                    cx, cy = tg["cx"], tg["cy"]
-                    key = (round(cx / 12), round(cy / 12))   # ~12px grid
-                except (KeyError, TypeError):
-                    continue
-                if key in seen:
-                    continue
-                if tg.get("source") == "cv" and _inside_any(cx, cy, atspi_boxes):
-                    continue                             # AT-SPI already owns this spot
-                seen.add(key)
-                merged.append(tg)
-                if name == "atspi":
-                    try:
-                        atspi_boxes.append((tg["x"], tg["y"], tg["w"], tg["h"]))
-                    except (KeyError, TypeError):
-                        pass
-        return merged
+        """Merge every provider's current boxes (see merge_provider_files)."""
+        return merge_provider_files(self._files)
 
     def apply_config(self, cfg: dict):
         # provider set changes need a restart; the daemon handles that on `set`.
