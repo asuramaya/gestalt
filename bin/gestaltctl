@@ -19,8 +19,9 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 import sys
+
+import sutra  # vendored sibling — see sutra.version; re-vendor, never hand-edit
 
 
 def sock_path() -> str:
@@ -29,15 +30,10 @@ def sock_path() -> str:
 
 
 def send(cmd: dict) -> dict:
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        s.connect(sock_path())
-    except OSError as e:
-        sys.exit(f"gestaltd not reachable ({e}). Is the service running?")
-    s.sendall((json.dumps(cmd) + "\n").encode())
-    data = s.recv(64 * 1024)
-    s.close()
-    return json.loads(data.decode() or "{}")
+    reply = sutra.request(sock_path(), cmd)
+    if reply is None:
+        sys.exit("gestaltd not reachable. Is the service running?")
+    return reply
 
 
 def main(argv):

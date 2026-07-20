@@ -27,16 +27,28 @@ from __future__ import annotations
 import json
 import os
 import signal
+import socket
 import sys
 import threading
 import time
 import traceback
+
+import sutra  # vendored sibling — see bin/sutra.version; re-vendor, never hand-edit
 
 # Allow running straight from the source tree (bin/ next to gestalt/).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from gestalt import health, ipc  # noqa: E402
 from gestalt.config import sanitize_config  # noqa: E402
+
+
+def daemon_version() -> str:
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        with open(os.path.join(repo_root, "VERSION")) as f:
+            return f.read().strip()
+    except OSError:
+        return "0.0.0"
 
 
 def config_path() -> str:
@@ -240,7 +252,32 @@ class Daemon:
     # ---- lifecycle --------------------------------------------------------
     def start(self):
         try:
-            ipc.ControlServer(self.handle).start()
+            path = ipc.socket_path()
+            # Refuse to steal a LIVE socket: unlinking a stale path from a crash
+            # is fine, but if something answers a connect, another gestaltd
+            # (e.g. the systemd service) already owns it — two daemons would
+            # fight over one camera. Probe here, before sutra.ControlServer
+            # unlinks/rebinds, so we can bail out cleanly.
+            if os.path.exists(path):
+                probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                probe.settimeout(0.5)
+                try:
+                    probe.connect(path)
+                except OSError:
+                    pass            # nothing listening — stale, safe to replace
+                else:
+                    raise RuntimeError(
+                        f"another gestaltd is running (control socket {path} answered)")
+                finally:
+                    probe.close()
+
+            def dispatch(_cmd, req):
+                return self.handle(req)
+
+            ctl = sutra.ControlServer(path, sutra.allow_uids({os.getuid()}),
+                                      daemon_version(), dispatch, self.status,
+                                      socket_owner=None)
+            ctl.start()
         except RuntimeError as e:
             # a live socket means another gestaltd (e.g. the systemd service)
             # already owns this session — stealing it would leave two daemons
