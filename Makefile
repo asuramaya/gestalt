@@ -90,8 +90,8 @@ check-vendored-path-all:
 	@$(MAKE) check-vendored-path SUTRA_CHECK_BIN=src/bin/gestaltctl SUTRA_CHECK_ARGS=status
 
 # rebuild packaging/release-signing/allowed_signers from the canonical keys
-# (see docs/RELEASE-SIGNING.md — do NOT run casually; arm ONLY in the same
-# act as cutting a signed release, per the sequencing rule there)
+# (see docs/RELEASE-SIGNING.md — do NOT run casually; arm strictly BEFORE
+# tagging, never after, per the sequencing rule there and docs/RELEASING.md)
 sync-signers:
 	bash packaging/sync-signers.sh
 

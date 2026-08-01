@@ -42,6 +42,25 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse to tag while the signing anchor is empty
+        run: |
+          # A tag's tree is exactly what `git archive` ships in the tarball
+          # below -- if packaging/release-signing/allowed_signers is empty
+          # AT TAG TIME, the tarball ships a permanently empty anchor,
+          # forever, because a sealed release is never re-cut. Safe for a
+          # pill that armed long ago (every tag since captures a populated
+          # anchor) but not for a first-ever release: arming must happen
+          # BEFORE the tag that ships it, never after, never bundled into
+          # the seal step. See docs/RELEASING.md's three-step order (found
+          # by Vajra in mudra's own doc, the only other repo exposed to
+          # this — msg 2891).
+          if [ ! -s packaging/release-signing/allowed_signers ]; then
+            echo "::error::packaging/release-signing/allowed_signers is empty at this tag." \
+                 "Arming (make sync-signers, operator's hand, their key home) must happen" \
+                 "BEFORE tagging, never after. Delete this tag, arm, re-tag."
+            exit 1
+          fi
+
       - name: Build release tarball
         run: |
           # .gitattributes export-ignore keeps CI/dev files out of the tarball.

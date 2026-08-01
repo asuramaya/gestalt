@@ -18,10 +18,14 @@
 # run unless it finds exactly 4 canonical keys, so a partial/broken key home
 # can't silently produce a partial anchor.
 #
-# SEQUENCING: this populates the anchor. Run it ONLY in the same act as
-# cutting a signed gestalt release — arming packaging/release-signing/
-# allowed_signers any earlier bricks any future verifying client against
-# every release published before the arming. Building this script is not
+# SEQUENCING: this populates the anchor. Run it as step 2 of
+# docs/RELEASING.md's order — after `make check`, strictly BEFORE the tag
+# that will ship it. release.yml builds the release tarball with `git
+# archive` from the tag itself, so an anchor armed AFTER tagging ships that
+# tag's tarball with a permanently empty anchor (a sealed release is never
+# re-cut) — the trap Vajra found in mudra's own doc, mail #2891. release.yml
+# refuses to build from a tag whose anchor is still empty, so getting this
+# wrong fails loud rather than shipping broken. Building this script is not
 # running it.
 set -euo pipefail
 # This file lives at packaging/sync-signers.sh, one level under the repo

@@ -1,9 +1,12 @@
 # Release signing
 
 Status: **unarmed.** `packaging/release-signing/allowed_signers` ships empty — gestalt has never
-cut a release, so there is no ceremony yet to arm it in the same act as. Every client verifying a
-gestalt release today degrades to sha256-only (there is no client yet either; see the known gap
-below). See [RELEASING.md](RELEASING.md) for the running order.
+cut a release, and the ceremony that arms it hasn't run yet. Every client verifying a gestalt
+release today degrades to sha256-only (there is no client yet either; see the known gap below).
+See [RELEASING.md](RELEASING.md) for the running order — **arm, then tag, then seal, always in
+that order**; `release.yml` refuses to build a release tarball from a tag whose anchor is still
+empty, so this is enforced, not just documented (Vajra found the ordering trap this guards
+against, in mudra's own doc — mail #2891).
 
 ## Why this exists
 
@@ -58,11 +61,18 @@ grow real verification, extending `sync-signers.sh` with an embedded-twin step (
 `packaging/sync-signers.sh` is the reference shape) is part of that same future change, not
 something to half-do here.
 
-**Sequencing rule (do not skip):** `make sync-signers` populates the anchor. Run it ONLY in the
-same act as cutting a signed release: arming it any earlier bricks any future verifying client
-against every existing unsigned release. CI's `signing-sync` check
-(`.github/workflows/signing-sync.yml`) confirms the anchor is either empty or exactly 4
-well-formed lines.
+**Sequencing rule (do not skip):** `make sync-signers` populates the anchor. Run it as **step 2**
+of [RELEASING.md](RELEASING.md)'s running order — after `make check` passes, strictly *before* the
+tag that will ship it. `release.yml` builds the release tarball with `git archive` from the tag
+itself, so whatever the anchor contains in the tagged tree is what ships, permanently (a sealed
+release is never re-cut). Arming after tagging — the mistake this rule exists to prevent — would
+ship that tag's tarball with a permanently empty anchor; `release.yml` now refuses to build a
+release tarball from a tag whose anchor is empty, so getting this wrong fails loud instead of
+shipping broken. (For a pill armed long ago, re-running `sync-signers` right before a later tag
+doesn't matter either way, since every tag since arming already captures a populated anchor — the
+ordering only bites a repo's first-ever release, which is where gestalt is now.) CI's
+`signing-sync` check (`.github/workflows/signing-sync.yml`) separately confirms the anchor is,
+at any point on `main`, either empty or exactly 4 well-formed lines.
 
 ## Per-release signing (operator, needs the FIDO2 key attached + a touch)
 
