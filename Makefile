@@ -1,6 +1,6 @@
 # Gestalt — common tasks. Run `make help` for the list.
 .PHONY: help install uninstall lint test check check-py check-shell check-js \
-        check-pill-js check-vendored-path-all check-repo pack clean
+        check-pill-js check-vendored-path-all check-repo sync-signers pack clean
 
 EXT := src/extension/gestalt@asuramaya
 
@@ -89,6 +89,12 @@ check-pill-js:
 check-vendored-path-all:
 	@$(MAKE) check-vendored-path SUTRA_CHECK_BIN=src/bin/gestaltctl SUTRA_CHECK_ARGS=status
 
+# rebuild packaging/release-signing/allowed_signers from the canonical keys
+# (see docs/RELEASE-SIGNING.md — do NOT run casually; arm ONLY in the same
+# act as cutting a signed release, per the sequencing rule there)
+sync-signers:
+	bash packaging/sync-signers.sh
+
 check-py: test
 	python3 -m py_compile src/bin/gestaltd src/bin/gestaltctl \
 		src/share/gestalt/lib/sutra.py src/share/gestalt/lib/sutra_update.py src/share/gestalt/lib/sutra_xen.py \
@@ -102,8 +108,8 @@ check-py: test
 # flag, so exclusions are passed inline instead of via a config file (no
 # shellcheckrc, anywhere — REPO-STANDARD.md §3). None excluded today.
 check-shell:
-	bash -n install.sh uninstall.sh
-	shellcheck install.sh uninstall.sh
+	bash -n install.sh uninstall.sh packaging/sync-signers.sh
+	shellcheck install.sh uninstall.sh packaging/sync-signers.sh
 
 check-js:
 	node --check "$(EXT)/extension.js"
@@ -120,7 +126,7 @@ check: check-py check-shell check-js check-sutra check-pill-js check-vendored-pa
 # list and its Wave-C exemptions.
 check-repo:
 	@fail=0; \
-	for f in README.md LICENSE Makefile install.sh uninstall.sh .gitignore \
+	for f in README.md LICENSE Makefile install.sh uninstall.sh .gitignore .gitattributes \
 	         docs/USAGE.md docs/ARCHITECTURE.md; do \
 	    if [ ! -e "$$f" ]; then echo "check-repo FAIL: missing $$f"; fail=1; fi; \
 	done; \
@@ -151,6 +157,9 @@ check-repo:
 	    src/bin/gestaltd src/bin/gestaltctl install.sh uninstall.sh \
 	    "$(EXT)/extension.js" 2>/dev/null; then \
 	    echo "check-repo FAIL: a literal version string exists outside packaging/VERSION"; fail=1; \
+	fi; \
+	if [ -f .github/workflows/release.yml ] && grep -v '^[[:space:]]*#' .github/workflows/release.yml 2>/dev/null | grep -q -- '--generate-notes'; then \
+	    echo "check-repo FAIL: release.yml still uses --generate-notes, not --notes-file"; fail=1; \
 	fi; \
 	stray=$$(find docs -name '*.md' -not -path '*/.*' | while read -r f; do git ls-files --error-unmatch "$$f" >/dev/null 2>&1 || echo "$$f"; done); \
 	if [ -n "$$stray" ]; then \

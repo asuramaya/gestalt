@@ -20,6 +20,8 @@ Built and tested on a **Precision 5770** (GNOME 50, Wayland).
 | Use it | [docs/USAGE.md](docs/USAGE.md) |
 | Change it | [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 | Understand how it's built | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Cut a release | [docs/RELEASING.md](docs/RELEASING.md) |
+| See what changed | [docs/CHANGELOG.md](docs/CHANGELOG.md) |
 | Report a vulnerability | [.github/SECURITY.md](.github/SECURITY.md) |
 
 ## Why a head-pointer pill and not a script
