@@ -26,17 +26,22 @@ jobs:
       - name: check-vendored-path (gestaltctl resolves the checkout's own sutra)
         run: make check-vendored-path-all
 
-      # Only numpy, not the full packaging/packages.txt venv stack: the
-      # "hardware-free" tests exercise pure-math modules (pointing/endpoint.py
-      # is stdlib-only on its own) but importing them still runs
-      # gestalt/pointing/__init__.py, which eagerly pulls in recalibrate.py's
-      # `import numpy as np`. mediapipe/opencv/pygame/evdev/python-xlib are
-      # real camera/input deps install.sh's venv provides for the daemon
-      # itself — no test here touches that code, so they stay out of CI.
-      - name: Install numpy (needed to import gestalt.pointing for the hardware-free tests)
+      # numpy, and only numpy, ahead of check-py: packaging/packages.txt
+      # declares it a genuine gestalt runtime dep (pointing/'s own filtering,
+      # plus a transitive dep of mediapipe/opencv anyway) -- gestaltd cannot
+      # run without it, so installing it here is honest, not a workaround.
+      # "hardware-free" (no camera/display/uinput) and "dependency-free" are
+      # different claims; conflating them is exactly what made this step
+      # silently rely on numpy already being on the runner's dist-packages
+      # in dev sandboxes while failing clean on ubuntu-latest CI (run
+      # 30716789389, on fa2297a, has never been green). The rest of
+      # packages.txt (mediapipe/opencv/pygame/evdev/python-xlib) stays out:
+      # those are install.sh's venv for the daemon itself, and no test here
+      # touches that code.
+      - name: Install numpy (a real gestalt runtime dep, needed to import gestalt.pointing)
         run: pip install numpy
 
-      - name: Python compiles + lint + hardware-free tests
+      - name: Python compiles + lint + hardware-free tests (numpy required)
         run: make check-py
 
       - name: Shell scripts parse + shellcheck
