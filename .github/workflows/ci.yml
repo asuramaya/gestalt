@@ -44,7 +44,7 @@ jobs:
       # independent gap the numpy fix's own first CI run exposed: ruff was
       # never installed here, only present because dev machines have it on
       # PATH already).
-      - name: Install check-py's tools (numpy: real runtime dep; ruff: lint tool only)
+      - name: "Install check-py's tools (numpy: real runtime dep; ruff: lint tool only)"
         run: pip install numpy ruff
 
       - name: Python compiles + lint + hardware-free tests (numpy required)
