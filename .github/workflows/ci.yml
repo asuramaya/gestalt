@@ -26,6 +26,16 @@ jobs:
       - name: check-vendored-path (gestaltctl resolves the checkout's own sutra)
         run: make check-vendored-path-all
 
+      # Only numpy, not the full packaging/packages.txt venv stack: the
+      # "hardware-free" tests exercise pure-math modules (pointing/endpoint.py
+      # is stdlib-only on its own) but importing them still runs
+      # gestalt/pointing/__init__.py, which eagerly pulls in recalibrate.py's
+      # `import numpy as np`. mediapipe/opencv/pygame/evdev/python-xlib are
+      # real camera/input deps install.sh's venv provides for the daemon
+      # itself — no test here touches that code, so they stay out of CI.
+      - name: Install numpy (needed to import gestalt.pointing for the hardware-free tests)
+        run: pip install numpy
+
       - name: Python compiles + lint + hardware-free tests
         run: make check-py
 
