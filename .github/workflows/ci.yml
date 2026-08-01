@@ -26,20 +26,26 @@ jobs:
       - name: check-vendored-path (gestaltctl resolves the checkout's own sutra)
         run: make check-vendored-path-all
 
-      # numpy, and only numpy, ahead of check-py: packaging/packages.txt
-      # declares it a genuine gestalt runtime dep (pointing/'s own filtering,
-      # plus a transitive dep of mediapipe/opencv anyway) -- gestaltd cannot
-      # run without it, so installing it here is honest, not a workaround.
-      # "hardware-free" (no camera/display/uinput) and "dependency-free" are
-      # different claims; conflating them is exactly what made this step
-      # silently rely on numpy already being on the runner's dist-packages
-      # in dev sandboxes while failing clean on ubuntu-latest CI (run
-      # 30716789389, on fa2297a, has never been green). The rest of
-      # packages.txt (mediapipe/opencv/pygame/evdev/python-xlib) stays out:
-      # those are install.sh's venv for the daemon itself, and no test here
-      # touches that code.
-      - name: Install numpy (a real gestalt runtime dep, needed to import gestalt.pointing)
-        run: pip install numpy
+      # numpy: packaging/packages.txt declares it a genuine gestalt runtime
+      # dep (pointing/'s own filtering, plus a transitive dep of
+      # mediapipe/opencv anyway) -- gestaltd cannot run without it, so
+      # installing it here is honest, not a workaround. "hardware-free" (no
+      # camera/display/uinput) and "dependency-free" are different claims;
+      # conflating them is exactly what let this step silently rely on numpy
+      # already being on the runner's dist-packages in dev sandboxes while
+      # failing clean on ubuntu-latest CI (run 30716789389, on fa2297a, had
+      # never been green). The rest of packages.txt
+      # (mediapipe/opencv/pygame/evdev/python-xlib) stays out: those are
+      # install.sh's venv for the daemon itself, and no test here touches
+      # that code.
+      #
+      # ruff: a lint TOOL, not a gestalt dep at all -- check-py's own ruff
+      # invocation was never runnable on a bare runner either (a second,
+      # independent gap the numpy fix's own first CI run exposed: ruff was
+      # never installed here, only present because dev machines have it on
+      # PATH already).
+      - name: Install check-py's tools (numpy: real runtime dep; ruff: lint tool only)
+        run: pip install numpy ruff
 
       - name: Python compiles + lint + hardware-free tests (numpy required)
         run: make check-py
