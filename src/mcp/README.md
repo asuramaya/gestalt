@@ -27,7 +27,7 @@ is gitignored in this repo on purpose, it's machine-specific):
   "mcpServers": {
     "gestalt": {
       "command": "/home/YOU/.local/share/gestalt/venv/bin/python",
-      "args": ["/path/to/gestalt/mcp/gestalt_mcp.py"],
+      "args": ["/path/to/gestalt/src/mcp/gestalt_mcp.py"],
       "env": { "GESTALT_MCP_ALLOWLIST": "" }
     }
   }

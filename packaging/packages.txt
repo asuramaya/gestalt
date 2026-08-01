@@ -1,0 +1,21 @@
+# Gestalt — non-stdlib dependency exemption (REPO-STANDARD.md §10 of FAMILY.md's
+# doctrine: "stdlib-only Python unless the domain physically requires
+# otherwise... the exemption is documented in packages.txt").
+#
+# gestaltd is the family's first CV/input pointer daemon: head/hand tracking
+# and uinput injection have no stdlib path on Linux. Installed into the
+# bundled venv by install.sh (uv venv --python 3.12), never system-wide.
+#
+# package         why
+# ---------------  ---------------------------------------------------------
+mediapipe          face/hand landmark tracking (head pose, pinch gesture) — the
+                    reason the venv is pinned to Python 3.12: no 3.13+/3.14 wheels
+opencv-python       camera capture (V4L2) + the CV target-provider's classical
+                    pane-divider detection
+numpy               array math under mediapipe/opencv, and the pointing/ module's
+                    own filtering (1€ filter, DynaSpot, KTM endpoint prediction)
+pygame              the XWayland click-through cursor overlay + diagnostics window
+evdev               /dev/uinput virtual pointer/keyboard device (click/scroll/key
+                    injection)
+python-xlib         active-window queries + cursor positioning outside the
+                    overlay's own draw loop

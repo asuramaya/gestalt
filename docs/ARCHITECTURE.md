@@ -5,6 +5,26 @@ pointing model is in [POINTING.md](./POINTING.md); subsystem deep-dives are in
 [CAMERA.md](./CAMERA.md), [TARGETS.md](./TARGETS.md), [INPUT.md](./INPUT.md), and
 [DAEMON.md](./DAEMON.md). This file is the index and the cross-cutting concerns.
 
+## Repo map (top level)
+
+```
+docs/                   this file, USAGE.md, + the subsystem deep-dives above
+packaging/VERSION       the one version constant — nothing else assigns a literal
+packaging/packages.txt  the non-stdlib dependency exemption (mediapipe, opencv,
+                        numpy, pygame, evdev, python-xlib — venv-only, install.sh)
+src/
+  bin/                   gestaltd, gestaltctl — see the component map below
+  data/                  models/ (MediaPipe .task files), systemd/user/ — installed as-is
+  extension/              gestalt@asuramaya/ — the GNOME pill
+  share/gestalt/lib/       the vendored sutra commons + .version/.commit anchors
+                          (sutra.py, sutra_update.py, sutra_xen.py, sutra.mk) —
+                          see sutra/docs/BOOTSTRAP.md; never hand-edit, re-vendor
+  gestalt/                the daemon's own package, detailed below
+  providers/ mcp/ research/   see the component map + their own README.md
+tests/                  hardware-free: config fuzz, endpoint predictor, resolver
+.github/                CODE_OF_CONDUCT.md, CONTRIBUTING.md, SECURITY.md, workflows/
+```
+
 ## What shapes everything: it runs as *you*
 
 Gestalt needs four things, all session-scoped, none privileged:
@@ -58,18 +78,22 @@ covers it; comfort maps to the *active monitor's* rect then offsets to virtual.
 ## Component map (files)
 
 ```
- gestalt@asuramaya/extension.js   GNOME Shell extension (GJS)
+ src/extension/gestalt@asuramaya/extension.js   GNOME Shell extension (GJS)
    ├─ top-bar HUD (colour-coded glance, click -> diag)
    ├─ Quick Settings pill (controls + metrics)
    └─ ShellCursor (Clutter actor, ABOVE menus — reads RUNTIME/cursor at 30fps)
    reads  RUNTIME/status.json (1s), RUNTIME/cursor (33ms)
    writes RUNTIME/control.sock (line-JSON commands)
+   pill.js vendored alongside (sutra's shared extension commons) but not yet
+   imported — see Standard exemptions below
 
- bin/gestaltd   user daemon (bundled uv venv, Python 3.12)
+ src/bin/gestaltd   user daemon (bundled uv venv, Python 3.12)
    main loop: lock-guarded engine.step()/pump(), status write, 2s layout refresh
    ├─ gestalt/config.py    DEFAULTS + sanitize_config (the ONE chokepoint) + _RANGES
    ├─ gestalt/health.py    one health state for all surfaces
-   ├─ gestalt/ipc.py       status.json writer + threaded control.sock server
+   ├─ gestalt/ipc.py       status.json writer + runtime-path helpers (the
+   │                       control-socket SERVER itself is sutra.ControlServer,
+   │                       built in Daemon.start() — see src/share/gestalt/lib/)
    ├─ gestalt/engine.py    owns camera; drives the pipeline above; refresh_layout()
    ├─ gestalt/diag/        diagnostics window (camera + live pipeline overlay)
    ├─ gestalt/input/       head.py, gaze.py, perioral.py, body.py, torso.py, onefilter.py
@@ -78,17 +102,21 @@ covers it; comfort maps to the *active monitor's* rect then offsets to virtual.
    ├─ gestalt/overlay/     cursor.py, monitors.py, targets_overlay.py
    ├─ gestalt/targets/     registry.py (spawns + merges providers; atspi-authoritative)
    └─ gestalt/record.py    JSONL session recorder (head + perioral + clicks)
+   (all under src/gestalt/ — the package src/bin/gestaltd imports)
 
- providers/   subprocesses (the "cheap universal boxes" layer)
+ src/providers/   subprocesses (the "cheap universal boxes" layer)
    ├─ atspi_provider.py   SYSTEM python (gi/Atspi) — THE target source; active-window only
    └─ cv_provider.py      gestalt venv (cv2) — DEAD END, default OFF (see TARGETS.md)
 
- research/   offline analysis (perioral_analysis.py, selfsup_prototype.py)
+ src/mcp/   the agent-facing MCP server (opt-in, not part of the default install)
+
+ src/research/   offline analysis (perioral_analysis.py, selfsup_prototype.py)
 ```
 
 ## Daemon threading (the crash audit found these — see DAEMON.md)
 
-- `ipc.ControlServer` runs `handle()` in **per-connection threads**; the engine is
+- `sutra.ControlServer` (see src/share/gestalt/lib/) runs `Daemon.handle()` in
+  **per-connection threads** via a thin dispatch closure; the engine is
   stepped on the **main thread**. A `threading.RLock` (`Daemon._lock`) serializes
   ALL engine access so a command's `apply_config`/camera-reopen/provider-restart
   can't race a live frame. RLock (not Lock) because a diag-window keypress re-enters
@@ -110,21 +138,35 @@ Health states (`health.py`, mirrored in `extension.js`): `off`, `no_engine`,
 
 ## CI-safe frame
 
-`bin/gestaltd`, `config.py`, `ipc.py`, `health.py` import **stdlib only** — the
-daemon frame, the config fuzz (`tests/test_config.py`, 8000+ cases), and
-`node --check` on the extension all run with no camera/display/venv. The CV stack
-is imported lazily in `engine.py`; missing => status-only mode, not a crash.
+`src/bin/gestaltd`, `config.py`, `ipc.py`, `health.py` import **stdlib only**
+(sutra too — stdlib-only by its own constitution) — the daemon frame, the
+config fuzz (`tests/test_config.py`, 8000+ cases), and `node --check` on the
+extension all run with no camera/display/venv. The CV stack is imported
+lazily in `engine.py`; missing => status-only mode, not a crash.
 
 ## Deploy / iterate (no logout for daemon code)
 
 ```
-cp -r gestalt/* ~/.local/share/gestalt/gestalt/
-cp providers/*.py ~/.local/share/gestalt/providers/      # providers are SEPARATE
-cp bin/gestaltd bin/gestaltctl ~/.local/share/gestalt/bin/
+cp -r src/gestalt/* ~/.local/share/gestalt/gestalt/
+cp src/providers/*.py ~/.local/share/gestalt/providers/  # providers are SEPARATE
+cp src/bin/gestaltd src/bin/gestaltctl ~/.local/share/gestalt/bin/
 systemctl --user restart gestalt.service                 # ~3s; status.json stale until then
 ```
 Only `extension.js` needs a **logout** to reload (GNOME). `make check` must pass
-(ruff + config fuzz + py_compile + `node --check` extension).
+(ruff + config fuzz + py_compile + `node --check` extension + check-repo).
+
+## Standard exemptions
+
+| Item | Why |
+|------|-----|
+| no `docs/RELEASING.md` | no release ceremony yet — gestalt has never cut a tagged release (pre-alpha, mid-convergence) |
+| no `docs/RELEASE-SIGNING.md` / `packaging/release-signing/` | no release-signing machinery yet, same reason |
+| no `src/data/man/gestalt.1` | pre-alpha, the `gestaltctl` verb surface is still moving |
+| no `packaging/deb/` | no `.deb` build yet — user-level `install.sh` only |
+| no `docs/CHANGELOG.md` | nothing released yet to log; starts at the first tag |
+| `pill.js` vendored, not imported | sutra's shared extension commons landed in this vendor pass; wiring it into `extension.js` is a behavior change, out of scope for a hygiene pass |
+| `check-vendored-path` not wired to `gestaltd` | the guard runs the binary for real; `gestaltd` has no safe `--help`/no-op path today (only `Daemon().start()`, which opens the camera and grabs uinput) — needs a CLI-surface change first, deliberately deferred |
+| more than 4 topic docs under `docs/` | CAMERA.md/INPUT.md/POINTING.md/TARGETS.md/DAEMON.md/LEARNED_TRACKER.md/FAMILY-AUDIT.md predate REPO-STANDARD.md; consolidating them into this file is tracked as follow-up, not attempted in this pass |
 
 ## Adding a config field
 1. `DEFAULTS` in `config.py`  2. clamp in `sanitize_config` (+ `_RANGES`)

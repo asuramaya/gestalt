@@ -33,22 +33,45 @@ import threading
 import time
 import traceback
 
-import sutra  # vendored sibling — see bin/sutra.version; re-vendor, never hand-edit
+# --- sutra bootstrap (sutra 0.10.1; see docs/BOOTSTRAP.md -- do not hand-edit) ----
+import os as _os
+import sys as _sys
+_PILL = "gestalt"
+_libdir = _os.path.join(
+    _os.path.dirname(_os.path.dirname(_os.path.realpath(__file__))),
+    "share", _PILL, "lib")
+if _libdir not in _sys.path:
+    _sys.path.insert(0, _libdir)
+del _os, _sys, _libdir, _PILL
+# --- end sutra bootstrap ----------------------------------------------------
+import sutra  # noqa: E402
 
-# Allow running straight from the source tree (bin/ next to gestalt/).
+# Allow running straight from the source tree (src/bin/ two levels under src/gestalt/).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from gestalt import health, ipc  # noqa: E402
 from gestalt.config import sanitize_config  # noqa: E402
 
+# One version constant, packaging/VERSION; nothing here duplicates it as a
+# literal. This file lives at src/bin/gestaltd, two levels under the repo
+# root, so _SRC_DIR needs three dirname calls, not two.
+_SRC_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+VERSION_CANDIDATES = (
+    os.path.expanduser("~/.local/share/gestalt/VERSION"),
+    os.path.join(_SRC_DIR, "packaging", "VERSION"),
+)
+
 
 def daemon_version() -> str:
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    try:
-        with open(os.path.join(repo_root, "VERSION")) as f:
-            return f.read().strip()
-    except OSError:
-        return "0.0.0"
+    for path in VERSION_CANDIDATES:
+        try:
+            with open(path) as f:
+                v = f.read().strip()
+        except OSError:
+            continue
+        if v:
+            return v
+    return "unknown"
 
 
 def config_path() -> str:

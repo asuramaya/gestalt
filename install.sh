@@ -13,7 +13,7 @@ REPO="asuramaya/gestalt"
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo /nonexistent)"
 
 # Bootstrap for the one-line install: if not next to the source, fetch a release.
-if [[ ! -f "$SRC/bin/gestaltd" ]]; then
+if [[ ! -f "$SRC/src/bin/gestaltd" ]]; then
   echo "== fetching latest Gestalt release =="
   TMP="$(mktemp -d)"
   url="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
@@ -44,17 +44,37 @@ uv pip install --python "$PREFIX/venv/bin/python" \
   mediapipe opencv-python numpy pygame evdev python-xlib
 
 # 2. app code (daemon + cli + package + providers + MediaPipe models)
+# No installed path changes here (REPO-STANDARD.md §6) — only the SOURCE
+# tree moved (src/bin/, src/gestalt/, src/providers/, src/data/models/,
+# packaging/VERSION); $PREFIX still gets bin/, gestalt/, providers/, models/,
+# VERSION at the same names as before.
 echo "-- installing code -> $PREFIX"
-cp "$SRC/bin/gestaltd" "$SRC/bin/gestaltctl" "$SRC/bin/sutra.py" "$SRC/bin/sutra.version" "$PREFIX/bin/"
+cp "$SRC/src/bin/gestaltd" "$SRC/src/bin/gestaltctl" "$PREFIX/bin/"
+# Sutra install-path adoption (sutra/docs/BOOTSTRAP.md, ruling 3e44bd95):
+# vendored copies live in their own private, package-owned dir instead of
+# beside the binaries — every binary that imports sutra finds it there via
+# a small sys.path bootstrap preamble instead of relying on co-location.
+echo "-- sutra commons -> $PREFIX/share/gestalt/lib"
+mkdir -p "$PREFIX/share/gestalt/lib"
+for f in sutra.py sutra.version sutra.commit \
+         sutra_update.py sutra_update.version sutra_update.commit \
+         sutra_xen.py sutra_xen.version sutra_xen.commit; do
+  [[ -f "$SRC/src/share/gestalt/lib/$f" ]] && cp "$SRC/src/share/gestalt/lib/$f" "$PREFIX/share/gestalt/lib/$f"
+done
+# Old-layout leftover: a machine that ran a pre-adoption install.sh has
+# sutra.py/.version sitting co-located in $PREFIX/bin, owned by nothing.
+# Clean it up unconditionally so it can't shadow the new bootstrap-resolved
+# copy or linger forever.
+rm -f "$PREFIX/bin/sutra.py" "$PREFIX/bin/sutra.version"
 # Wipe the three code dirs before copying. `cp -r src dst` when dst EXISTS copies
 # INTO it (dst/src) *and* leaves last install's stale modules/__pycache__ behind —
 # an "upgrade" would then silently run old code. rm -rf makes the copy a clean
 # replace. Only these three are code; venv/recordings/bin/config are preserved.
 rm -rf "$PREFIX/gestalt" "$PREFIX/providers" "$PREFIX/models"
-cp -r "$SRC/gestalt" "$PREFIX/gestalt"
-cp -r "$SRC/providers" "$PREFIX/providers"
-cp -r "$SRC/models" "$PREFIX/models"
-cp "$SRC/VERSION" "$PREFIX/VERSION"
+cp -r "$SRC/src/gestalt" "$PREFIX/gestalt"
+cp -r "$SRC/src/providers" "$PREFIX/providers"
+cp -r "$SRC/src/data/models" "$PREFIX/models"
+cp "$SRC/packaging/VERSION" "$PREFIX/VERSION"
 chmod 0755 "$PREFIX/bin/gestaltd" "$PREFIX/bin/gestaltctl"
 ln -sf "$PREFIX/bin/gestaltctl" "$HOME/.local/bin/gestaltctl" 2>/dev/null || true
 
@@ -84,7 +104,7 @@ fi
 # 5. user systemd service
 echo "-- installing user service"
 mkdir -p "$HOME/.config/systemd/user"
-cp "$SRC/systemd/user/gestalt.service" "$HOME/.config/systemd/user/gestalt.service"
+cp "$SRC/src/data/systemd/user/gestalt.service" "$HOME/.config/systemd/user/gestalt.service"
 systemctl --user daemon-reload
 systemctl --user enable --now gestalt.service || \
   echo "   (will start on next login)"
@@ -92,10 +112,12 @@ systemctl --user enable --now gestalt.service || \
 # 6. GNOME Shell extension
 echo "-- installing Quick Settings pill -> $EXT_DIR"
 mkdir -p "$EXT_DIR/schemas"
-cp "$SRC/extension/$EXT_UUID/metadata.json" "$SRC/extension/$EXT_UUID/extension.js" "$EXT_DIR/"
+cp "$SRC/src/extension/$EXT_UUID/metadata.json" "$SRC/src/extension/$EXT_UUID/extension.js" "$EXT_DIR/"
+# pill.js is vendored (src/share/gestalt/lib's sibling commons) but not yet
+# imported by extension.js — deliberately not installed until it's wired in.
 # The panic-kill keyboard shortcut is a GSettings key — compile its schema into
 # the extension dir so getSettings()/addKeybinding() can read it.
-cp "$SRC/extension/$EXT_UUID/schemas/"*.gschema.xml "$EXT_DIR/schemas/"
+cp "$SRC/src/extension/$EXT_UUID/schemas/"*.gschema.xml "$EXT_DIR/schemas/"
 glib-compile-schemas "$EXT_DIR/schemas"
 gnome-extensions enable "$EXT_UUID" 2>/dev/null \
   && echo "   enabled" \

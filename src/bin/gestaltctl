@@ -21,7 +21,18 @@ import json
 import os
 import sys
 
-import sutra  # vendored sibling — see sutra.version; re-vendor, never hand-edit
+# --- sutra bootstrap (sutra 0.10.1; see docs/BOOTSTRAP.md -- do not hand-edit) ----
+import os as _os
+import sys as _sys
+_PILL = "gestalt"
+_libdir = _os.path.join(
+    _os.path.dirname(_os.path.dirname(_os.path.realpath(__file__))),
+    "share", _PILL, "lib")
+if _libdir not in _sys.path:
+    _sys.path.insert(0, _libdir)
+del _os, _sys, _libdir, _PILL
+# --- end sutra bootstrap ----------------------------------------------------
+import sutra  # noqa: E402
 
 
 def sock_path() -> str:

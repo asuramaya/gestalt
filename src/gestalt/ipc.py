@@ -3,8 +3,8 @@
 """
 The daemon <-> pill contract: a status JSON snapshot the pill polls, and the
 paths for the line-delimited JSON control socket sutra.ControlServer serves
-(bin/gestaltd wires it up — see bin/sutra.py, vendored per
-ByeByte/docs/SUTRA-ADOPT-SPEC.md §5).
+(src/bin/gestaltd wires it up — see src/share/gestalt/lib/sutra.py, vendored
+per sutra/docs/BOOTSTRAP.md).
 
 Unlike PhanSpeed (root daemon, world-reachable socket, SO_PEERCRED auth),
 gestaltd runs as the user inside the graphical session, so the socket only ever

@@ -3,7 +3,7 @@
 A **provider** is a standalone process that discovers candidate on-screen
 targets (clickable widgets, panes, icons) and streams their screen-space boxes
 so the pointer can magnetize to the nearest centroid (DynaSpot; see
-[../docs/POINTING.md](../docs/POINTING.md)).
+[../../docs/POINTING.md](../../docs/POINTING.md)).
 
 Providers are separate processes on purpose: the CV engine needs a pinned 3.12
 venv (mediapipe/opencv), while AT-SPI (`gi`/`Atspi`) only exists on system

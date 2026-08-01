@@ -7,7 +7,7 @@ agent-facing click() resolve an approximate point through."""
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from gestalt.targets.resolve import resolve_target  # noqa: E402
 
 BTN = {"cx": 100.0, "cy": 100.0, "w": 40, "h": 20, "role": "push button",

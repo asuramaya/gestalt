@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Order matters: the structure gate runs FIRST, before any build step
+      # (REPO-STANDARD.md §3 — placing it after a build step let a bad root
+      # ship on a real runner once already).
+      - name: Repo structure gate (REPO-STANDARD.md)
+        run: make check-repo
+
+      - name: check-sutra (vendored commons integrity)
+        run: make check-sutra
+
+      - name: check-pill-js (vendored extension commons integrity)
+        run: make check-pill-js
+
+      - name: check-vendored-path (gestaltctl resolves the checkout's own sutra)
+        run: make check-vendored-path-all
+
+      - name: Python compiles + lint + hardware-free tests
+        run: make check-py
+
+      - name: Shell scripts parse + shellcheck
+        run: make check-shell
+
+      - name: Extension JS compiles + metadata parses
+        run: make check-js

@@ -13,6 +13,15 @@ Built and tested on a **Precision 5770** (GNOME 50, Wayland).
 > config, IPC, pill, and target providers are in place. The CV engine is being
 > ported from the prototype — until then the daemon runs in status-only mode.
 
+## Map
+
+| | |
+|---|---|
+| Use it | [docs/USAGE.md](docs/USAGE.md) |
+| Change it | [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) |
+| Understand how it's built | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Report a vulnerability | [.github/SECURITY.md](.github/SECURITY.md) |
+
 ## Why a head-pointer pill and not a script
 
 The pointing is **not tuned by feel** — every stage is a published HCI technique
@@ -75,17 +84,9 @@ gestaltctl arm | disarm | recenter
 gestaltctl set snap_pull 0.5
 ```
 
-## Project layout
-
-| Path | What |
-|------|------|
-| `bin/gestaltd` | the daemon (frame + control loop) |
-| `bin/gestaltctl` | CLI client for the control socket |
-| `gestalt/` | core package: `config` `ipc` `engine` + `input/ pointing/ gesture/ overlay/ targets/` |
-| `providers/` | `atspi_provider.py` (system python), `cv_provider.py` (venv) |
-| `extension/` | the GNOME Quick Settings pill (GJS) |
-| `systemd/user/` | the user service unit |
-| `docs/` | `ARCHITECTURE.md`, `POINTING.md` (the cited HCI basis) |
+See [docs/USAGE.md](docs/USAGE.md) for the full verb reference and
+troubleshooting; the repo's own map — what lives where — is in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), not duplicated here.
 
 ## Acknowledgements
 
