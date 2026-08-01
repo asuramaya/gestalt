@@ -1,12 +1,13 @@
 # Release signing
 
 Status: **unarmed.** `packaging/release-signing/allowed_signers` ships empty — gestalt has never
-cut a release, and the ceremony that arms it hasn't run yet. Every client verifying a gestalt
-release today degrades to sha256-only (there is no client yet either; see the known gap below).
-See [RELEASING.md](RELEASING.md) for the running order — **arm, then tag, then seal, always in
-that order**; `release.yml` refuses to build a release tarball from a tag whose anchor is still
-empty, so this is enforced, not just documented (Vajra found the ordering trap this guards
-against, in mudra's own doc — mail #2891).
+cut a release, and the ceremony that arms it hasn't run yet. `install.sh`'s one-line-install
+bootstrap enforces verification against this anchor already (see "Client verification" below); it
+just has nothing armed to check against yet, so every install today would refuse outright rather
+than degrade — see [RELEASING.md](RELEASING.md) for the running order — **arm, then tag, then
+seal, always in that order**; `release.yml` refuses to build a release tarball from a tag whose
+anchor is still empty, so this is enforced, not just documented (Vajra found the ordering trap
+this guards against, in mudra's own doc — mail #2891).
 
 ## Why this exists
 
@@ -53,13 +54,11 @@ Rebuilds `packaging/release-signing/allowed_signers` from all 4 canonical pubkey
 left 3 of 4 keys unpinned across other repos by appending one key at a time. Refuses to run unless
 it finds exactly 4 canonical keys.
 
-No embedded `install.sh` twin to keep in sync here, unlike coldspot: gestalt's `install.sh`
-bootstrap doesn't read a sibling `allowed_signers` at fetch time the way a curl-pipe-only script
-would need to — it currently does no verification of its auto-fetch at all (see "Known gap"
-below), so there is nothing today for `sync-signers.sh` to embed a copy into. Should `install.sh`
-grow real verification, extending `sync-signers.sh` with an embedded-twin step (coldspot's
-`packaging/sync-signers.sh` is the reference shape) is part of that same future change, not
-something to half-do here.
+Also rebuilds `install.sh`'s embedded `RELEASE_ALLOWED_SIGNERS` twin from the same anchor content
+(coldspot's `packaging/sync-signers.sh` is the reference shape): `install.sh`'s curl-pipe-bash
+bootstrap fetches only itself over the network, so it can't read the sibling `allowed_signers` at
+that point — the same content is embedded directly, byte-for-byte. CI's `signing-sync` check
+compares the two exactly; drift between them is a failed build, not a warning.
 
 **Sequencing rule (do not skip):** `make sync-signers` populates the anchor. Run it as **step 2**
 of [RELEASING.md](RELEASING.md)'s running order — after `make check` passes, strictly *before* the
@@ -87,7 +86,7 @@ ssh-keygen -Y sign -f /path/to/id_asuramaya_master_N.pub -n gestalt-release \
 gh release upload vX.Y.Z gestalt.tar.gz.sha256.sig
 ```
 
-## Verification (client side — not yet built)
+## Client verification — `install.sh`'s one-line-install bootstrap
 
 ```sh
 sha256sum -c gestalt.tar.gz.sha256                          # artifact matches the manifest
@@ -97,22 +96,20 @@ ssh-keygen -Y verify -f packaging/release-signing/allowed_signers \
 ```
 
 Exit 0 = valid signature from the pinned principal, over exactly those checksum bytes. Anything
-else is a hard failure. Nothing in gestalt runs this yet — there is no `gestalt-update` (gestalt has
-no auto-update timer at all today) and `install.sh` doesn't call it either. See the known gap below.
-
-## Known gap: install.sh's bootstrap does not consume or verify this chain
-
-`install.sh`'s one-line-install path fetches `https://api.github.com/repos/$REPO/releases/latest`
-and extracts `tarball_url` — GitHub's own auto-generated archive of the tag (served from
-`codeload.github.com`), **not** the named `gestalt.tar.gz` asset `release.yml` uploads — then pipes
-it straight into `tar` and execs the extracted `install.sh`. No checksum, no signature, no anchor
-lookup, at any point. This predates today's build and isn't introduced by it, but it means arming
-`allowed_signers` and sealing a release protects nothing on the install path until `install.sh` is
-taught to (a) fetch the actual `gestalt.tar.gz` release asset instead of the auto tarball, and (b)
-verify it against this anchor the way coldspot's `install.sh` does against its own embedded twin.
-That is a real behavior change to a script users already run unattended
-(`curl | bash`-equivalent), and belongs in its own dedicated, tested pass — not bundled into
-standing up the signing machinery itself. Tracked, not silently dropped.
+else is a hard failure. `install.sh`'s `verify_release_tarball()` implements exactly this: when run
+without its sibling files (`curl -fsSL .../install.sh | bash`), it fetches the named
+`gestalt.tar.gz` release asset (never GitHub's auto-generated `tarball_url` — that artifact isn't
+something `release.yml` uploads, so no checksum or signature can ever cover it; gestalt used to
+fetch that one, phanspeed hit and fixed the identical pattern first), verifies its sha256, then
+verifies the signature against the embedded `RELEASE_ALLOWED_SIGNERS` twin. **No soft degrade,
+unlike coldspot's own bootstrap:** an empty anchor, a missing `.sig` (release published but not yet
+sealed), or a signature that doesn't verify are all a hard, loud refusal — never a silent
+fallthrough to an unverified install. This is stricter than coldspot's own policy on purpose:
+coldspot's degrade-to-sha256-only branch exists to accommodate releases that predate its own first
+arming, and gestalt has no such era — `release.yml` refuses to tag while the anchor is empty (see
+above), so a real gestalt release is always already armed by the time it exists, and a soft
+fallback would just be an unused, riskier escape hatch. There is no `gestalt-update` (gestalt has
+no auto-update timer at all today) — only the one-line installer runs this check, currently.
 
 ## Vendored commons (Wave B)
 

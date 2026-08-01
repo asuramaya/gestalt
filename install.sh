@@ -10,18 +10,113 @@
 set -euo pipefail
 
 REPO="asuramaya/gestalt"
+# principal = WHO (the repo's stable identity); namespace = WHAT-FOR (what
+# this signature authorizes). Never conflate the two — see RELEASE.md.
+SIGN_PRINCIPAL="gestalt"
+SIGN_NAMESPACE="gestalt-release"
+
+# Trust anchor for the curl-pipe-bash bootstrap below, EMBEDDED directly:
+# `curl .../install.sh | bash` fetches this ONE file over the network, so at
+# that point there is no sibling packaging/release-signing/allowed_signers to
+# read. Kept in sync with that file by `make sync-signers`
+# (packaging/sync-signers.sh) — never hand-edit this. Single-quoted
+# deliberately: the value can span multiple lines (one per pinned key) and
+# must never be shell-interpolated.
+#
+# UNLIKE coldspot's own bootstrap, this never degrades to sha256-only when
+# empty: gestalt's release.yml refuses to build a release tarball from a tag
+# whose anchor is still empty (docs/RELEASE-SIGNING.md) — so a real gestalt
+# release is ALWAYS already armed by the time it exists. There is no
+# legitimate "released but unarmed" era to accommodate, unlike coldspot's own
+# history, so a soft fallback here would just be an unused, riskier escape
+# hatch. Empty here means this install.sh predates the ceremony (or was
+# tampered with) — refuse, don't degrade.
+RELEASE_ALLOWED_SIGNERS=''
+
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo /nonexistent)"
 
-# Bootstrap for the one-line install: if not next to the source, fetch a release.
-if [[ ! -f "$SRC/src/bin/gestaltd" ]]; then
+# ---- verified release bootstrap (coldspot-style) ------------------------
+# When run without its sibling files (i.e. `curl -fsSL .../install.sh |
+# bash`), fetch the published, checksum-and-signature-verified release
+# tarball and re-exec from it, rather than GitHub's auto-generated
+# tarball_url (the previous approach) — that artifact is not an asset
+# release.yml uploads, so SHA256SUMS/a signature can never cover it; it sits
+# structurally outside the signature chain, so no seal, now or ever, could
+# protect it. phanspeed hit and fixed this same pattern first; see its
+# install.sh for the fuller argument.
+verify_release_tarball() {
+  local tarball="$1" base="https://github.com/${REPO}/releases/latest/download" \
+        tmp sums sig signers want got
+  command -v sha256sum >/dev/null 2>&1 || {
+    echo "sha256sum not found; cannot verify the download. Install coreutils." >&2; exit 1; }
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+
+  sums="$tmp/gestalt.tar.gz.sha256"
+  curl -fsSL "${base}/gestalt.tar.gz.sha256" -o "$sums" \
+    || { echo "could not fetch release checksum; refusing unverified download." >&2; exit 1; }
+  want="$(awk '{print $1; exit}' "$sums")"
+  [[ -n "$want" ]] || { echo "release checksum file is empty or malformed; aborting." >&2; exit 1; }
+  got="$(sha256sum "$tarball" | awk '{print $1}')"
+  [[ "$want" == "$got" ]] || { echo "checksum mismatch on gestalt.tar.gz; aborting." >&2; exit 1; }
+  echo "verified release checksum."
+
+  # No soft degrade on an empty anchor — see RELEASE_ALLOWED_SIGNERS's own
+  # comment above for why gestalt's policy differs from coldspot's here.
+  [[ -n "$RELEASE_ALLOWED_SIGNERS" ]] || {
+    echo "no release-signing key embedded in this install.sh; refusing to" >&2
+    echo "install an unsigned release. Fetch a current install.sh and re-run." >&2
+    exit 1
+  }
+  command -v ssh-keygen >/dev/null 2>&1 || {
+    echo "ssh-keygen not found; cannot verify the release signature. Aborting." >&2; exit 1; }
+  sig="$tmp/gestalt.tar.gz.sha256.sig"
+  curl -fsSL "${base}/gestalt.tar.gz.sha256.sig" -o "$sig" || {
+    echo "no signature published for this release yet -- it exists but has" >&2
+    echo "not been sealed by the operator. Refusing to install an unsigned" >&2
+    echo "release. Try again once the release carries a .sig asset." >&2
+    exit 1
+  }
+  signers="$tmp/allowed_signers"
+  # No added newline: RELEASE_ALLOWED_SIGNERS is embedded byte-for-byte from
+  # the anchor file by `make sync-signers`, trailing newline included — that
+  # exact-copy invariant is what CI's signing-sync check enforces.
+  printf '%s' "$RELEASE_ALLOWED_SIGNERS" > "$signers"
+  if ! ssh-keygen -Y verify -f "$signers" -I "$SIGN_PRINCIPAL" -n "$SIGN_NAMESPACE" \
+        -s "$sig" < "$sums" >/dev/null 2>&1; then
+    echo "signature verification FAILED; refusing to install." >&2; exit 1
+  fi
+  echo "verified release signature."
+}
+
+bootstrap_from_release() {
+  command -v curl >/dev/null 2>&1 || { echo "curl is required for remote install" >&2; exit 1; }
+  command -v tar  >/dev/null 2>&1 || { echo "tar is required for remote install" >&2; exit 1; }
+  local tmp tarball inner
+  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  tarball="$tmp/gestalt.tar.gz"
   echo "== fetching latest Gestalt release =="
-  TMP="$(mktemp -d)"
-  url="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-        | grep -m1 tarball_url | cut -d'"' -f4)"
-  [[ -n "$url" ]] || { echo "could not find a release to download"; exit 1; }
-  curl -fsSL "$url" | tar -xz -C "$TMP" --strip-components=1
-  exec bash "$TMP/install.sh" "$@"
-fi
+  if ! curl -fsSL "https://github.com/${REPO}/releases/latest/download/gestalt.tar.gz" -o "$tarball"; then
+    # No unreviewed-`main` fallback: falling back to a mutable branch on ANY
+    # fetch hiccup (network blip, or an attacker simply interfering with the
+    # release-asset request) would turn a transient failure into an
+    # unverified install. Fail closed instead.
+    cat >&2 <<EOF
+could not fetch a published release tarball for ${REPO}. This installer
+never falls back to the unreviewed main branch — clone the repo and run
+install.sh from the checkout instead:
+
+  git clone https://github.com/${REPO} && cd gestalt && ./install.sh
+EOF
+    exit 1
+  fi
+  verify_release_tarball "$tarball"
+  tar -xzf "$tarball" -C "$tmp"
+  inner="$(find "$tmp" -maxdepth 2 -name install.sh -type f | head -n1)"
+  [[ -n "$inner" ]] || { echo "install.sh not found in archive" >&2; exit 1; }
+  bash "$inner" "$@"; exit $?
+}
+
+[[ -f "$SRC/src/bin/gestaltd" ]] || bootstrap_from_release "$@"
 
 PREFIX="$HOME/.local/share/gestalt"
 EXT_UUID="gestalt@asuramaya"

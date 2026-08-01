@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# `make sync-signers` — rebuild packaging/release-signing/allowed_signers from
-# the fleet's canonical pubkeys, per ~/code/REPOS/RELEASE.md's sync-signers
-# doctrine. No embedded install.sh twin to sync: gestalt's install.sh
-# bootstrap doesn't read a sibling allowed_signers at fetch time (it does no
-# verification of its auto-fetch at all today — see docs/RELEASE-SIGNING.md's
-# "Known gap" section), so there is nothing to embed a copy into yet.
+# `make sync-signers` — rebuild packaging/release-signing/allowed_signers AND
+# install.sh's embedded RELEASE_ALLOWED_SIGNERS twin from the fleet's
+# canonical pubkeys, per ~/code/REPOS/RELEASE.md's sync-signers doctrine.
+# install.sh's curl-pipe-bash bootstrap fetches only itself over the network,
+# so it can't read the sibling allowed_signers file at that point — the same
+# content is embedded directly (CI's signing-sync check compares them
+# byte-for-byte, per RELEASE.md — "a failed build, not a warning").
 #
 # Canonical key home (operator ruling 13ee52ce): ~/.ssh/asuramaya-master/ —
 # OUTSIDE every repo, never committed, never a sibling checkout. This is a
@@ -55,3 +56,26 @@ for p in "${pubs[@]}"; do
 done > "$tmp"
 mv "$tmp" "$anchor"
 echo "rebuilt $anchor from ${#pubs[@]} canonical keys ($KEY_HOME)"
+
+# Read the anchor file straight from disk in Python rather than round-
+# tripping it through a bash "$(...)" capture, which silently strips its
+# trailing newline. RELEASE_ALLOWED_SIGNERS is single-quoted (install.sh) so
+# this can span multiple lines with no escaping.
+python3 - "$HERE/install.sh" "$anchor" <<'PYEOF'
+import re
+import sys
+
+install_path, anchor_path = sys.argv[1], sys.argv[2]
+content = open(anchor_path).read()
+src = open(install_path).read()
+if "'" in content:
+    sys.exit("ERROR: canonical key content contains a literal single quote — "
+              "can't safely embed it in install.sh's single-quoted constant.")
+new, n = re.subn(r"RELEASE_ALLOWED_SIGNERS='.*?'",
+                  lambda _: f"RELEASE_ALLOWED_SIGNERS='{content}'",
+                  src, count=1, flags=re.DOTALL)
+if n != 1:
+    sys.exit("ERROR: RELEASE_ALLOWED_SIGNERS='...' not found in install.sh")
+open(install_path, 'w').write(new)
+PYEOF
+echo "synced install.sh's embedded RELEASE_ALLOWED_SIGNERS"

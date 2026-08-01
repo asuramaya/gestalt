@@ -83,17 +83,12 @@ RAMstein's v0.9.0 (armed one commit after an already-published unsigned tag, saf
 installed base existed yet to brick), gestalt's `release.yml` won't let a tag through with an empty
 anchor at all, so there is no unarmed-first-release exception here to begin with.
 
-**Known gap, not yet closed:** `install.sh`'s one-line-install bootstrap (`if [[ ! -f
-"$SRC/src/bin/gestaltd" ]]`) fetches GitHub's auto-generated `tarball_url` from the
-`releases/latest` API response — the archive GitHub builds automatically from the tag, not the
-named `gestalt.tar.gz` asset `release.yml` uploads — and performs no checksum or signature check on
-it at all before executing the extracted `install.sh` as bash. This is unrelated to today's build
-(the signing chain below is being stood up to match family shape and unblock a future ceremony) but
-it means arming the anchor will not, by itself, protect the one-line install path the way it does
-for coldspot's. See [RELEASE-SIGNING.md](RELEASE-SIGNING.md)'s own note on this. Closing it means
-teaching `install.sh` to fetch the named release asset and verify it (coldspot's `install.sh` is the
-reference shape) — a real behavior change to the live bootstrap, deliberately not attempted in this
-pass.
+`install.sh`'s one-line-install bootstrap now fetches the named `gestalt.tar.gz` release asset and
+verifies it against this same anchor (coldspot's shape, no soft degrade — see
+[RELEASE-SIGNING.md](RELEASE-SIGNING.md)) rather than GitHub's unverifiable auto-generated
+`tarball_url`, which it used to. This closed while the anchor was still empty and the bootstrap had
+never once run for real (`releases/latest` 404s — gestalt has never released), so there was no
+installed base to break by changing it.
 
 ## Rules that don't bend
 

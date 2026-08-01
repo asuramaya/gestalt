@@ -161,7 +161,6 @@ Only `extension.js` needs a **logout** to reload (GNOME). `make check` must pass
 |------|-----|
 | no `src/data/man/gestalt.1` | pre-alpha, the `gestaltctl` verb surface is still moving |
 | no `packaging/deb/` | no `.deb` build yet — user-level `install.sh` only; releases ship a source tarball via `release.yml` instead |
-| `install.sh`'s auto-fetch bootstrap doesn't verify what it fetches | it pulls GitHub's auto-generated `tarball_url`, not the named signed release asset `release.yml` uploads, and checks neither a checksum nor a signature before executing it — pre-existing, not introduced by the signing machinery just added; see `docs/RELEASE-SIGNING.md`'s "Known gap" section |
 | `pill.js` vendored, not imported | sutra's shared extension commons landed in this vendor pass; wiring it into `extension.js` is a behavior change, out of scope for a hygiene pass |
 | `check-vendored-path` not wired to `gestaltd` | the guard runs the binary for real; `gestaltd` has no safe `--help`/no-op path today (only `Daemon().start()`, which opens the camera and grabs uinput) — needs a CLI-surface change first, deliberately deferred |
 | more than 4 topic docs under `docs/` | CAMERA.md/INPUT.md/POINTING.md/TARGETS.md/DAEMON.md/LEARNED_TRACKER.md/FAMILY-AUDIT.md predate REPO-STANDARD.md; consolidating them into this file is tracked as follow-up, not attempted in this pass |
