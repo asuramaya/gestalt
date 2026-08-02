@@ -9,7 +9,7 @@ working tree clean (no operator WIP to triage around).
 Gestalt is the family's **input/HCI demon**: a hands-free pointer for GNOME — move
 the cursor with your head, click with a pinch, driven from a Quick Settings pill
 ("look to target, pinch to act," Apple-Vision-Pro-style, on Linux). Where the five
-resource-governors rule *machine* state (coldspot=net, phanspeed=power, ByeByte=bytes
+resource-governors rule *machine* state (coldspot=net, phanspeed=power, byebyte=bytes
 at rest, RAMstein=bytes alive, kast=cast paths), gestalt rules the *cursor* — reading
 a camera and driving uinput. That domain forces one structural divergence the rest of
 this audit turns on: **gestaltd is a user-session daemon, not a root system daemon.**

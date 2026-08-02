@@ -25,7 +25,7 @@ feeding it hostile target data. There is no network attack surface —
 Hardening in place (see `src/gestalt/ipc.py`, `src/bin/gestaltd`,
 `src/data/systemd/user/gestalt.service`):
 
-- **Unlike a root-daemon pill (PhanSpeed, ByeByte, RAMstein), gestaltd's
+- **Unlike a root-daemon pill (PhanSpeed, byebyte, RAMstein), gestaltd's
   socket faces its owner only** — `$XDG_RUNTIME_DIR/gestalt/` is a
   user-private `0700` directory, so SO_PEERCRED / world-reachable-socket
   concerns are moot by construction; `sutra.allow_uids({os.getuid()})` is
