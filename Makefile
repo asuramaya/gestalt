@@ -40,7 +40,7 @@ test:
 # sutra.mk's check-sutra covers only the three vendored .py modules —
 # BOOTSTRAP.md's own escape hatch for a pill that also vendors pill.js
 # ("extend the for mod in... line") never made it into sutra.mk's
-# generalized form (same gap RAMstein documents). Kept here as a small
+# generalized form (same gap ramstein documents). Kept here as a small
 # pill-side supplement, same integrity+freshness shape as check-sutra.
 # pill.js is vendored but NOT YET wired into extension.js — hygiene only,
 # no extension behavior change this pass.
@@ -122,7 +122,7 @@ check: check-py check-shell check-js check-sutra check-pill-js check-vendored-pa
 # The family's structural gate (REPO-STANDARD.md §5), mechanical only: it
 # cannot judge whether a document is any good, only that the shape it's
 # supposed to have is actually there and nothing contradicts it. Adapted
-# from RAMstein's check-repo (coldspot's original) to gestalt's own file
+# from ramstein's check-repo (coldspot's original) to gestalt's own file
 # list and its Wave-C exemptions.
 check-repo:
 	@fail=0; \

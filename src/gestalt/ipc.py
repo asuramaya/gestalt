@@ -6,7 +6,7 @@ paths for the line-delimited JSON control socket sutra.ControlServer serves
 (src/bin/gestaltd wires it up — see src/share/gestalt/lib/sutra.py, vendored
 per sutra/docs/BOOTSTRAP.md).
 
-Unlike PhanSpeed (root daemon, world-reachable socket, SO_PEERCRED auth),
+Unlike phanspeed (root daemon, world-reachable socket, SO_PEERCRED auth),
 gestaltd runs as the user inside the graphical session, so the socket only ever
 faces its owner (sutra.allow_uids({os.getuid()})). Both files live under
 $XDG_RUNTIME_DIR/gestalt (tmpfs, 0700, owned by the user) — no privilege

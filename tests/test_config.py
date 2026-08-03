@@ -3,7 +3,7 @@
 # Copyright (C) 2026 asuramaya and Gestalt contributors
 """
 Hardware-free fuzz of sanitize_config — the single chokepoint every config load
-and socket `set` passes through. Mirrors PhanSpeed's test_validation.py: prove
+and socket `set` passes through. Mirrors phanspeed's test_validation.py: prove
 that arbitrary/hostile input can never produce an out-of-range or malformed
 config. Runs in CI; no camera, no display, no venv deps.
 """

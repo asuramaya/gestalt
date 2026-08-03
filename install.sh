@@ -3,7 +3,7 @@
 # Copyright (C) 2026 asuramaya and Gestalt contributors
 # Gestalt installer — hands-free head-pointer daemon + Quick Settings pill.
 #
-# Unlike PhanSpeed, gestaltd runs as the USER (it needs your webcam, /dev/uinput,
+# Unlike phanspeed, gestaltd runs as the USER (it needs your webcam, /dev/uinput,
 # and a session overlay — none of which need root). So this installs a *user*
 # systemd service. The only root step is an optional udev rule granting access
 # to /dev/uinput (skip it if uinput is already world-writable on your box).

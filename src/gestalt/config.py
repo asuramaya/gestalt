@@ -3,11 +3,11 @@
 """
 Configuration defaults and the single sanitize chokepoint.
 
-Mirrors the PhanSpeed discipline: every config load AND every socket `set`
+Mirrors the phanspeed discipline: every config load AND every socket `set`
 passes through `sanitize_config()`. It clamps numerics and validates enums so a
 tampered config file or a hostile socket command can never push the daemon into
 a bad state. Gestalt runs as the *user* (not root), so the threat model is far
-lighter than PhanSpeed's — but keeping one chokepoint means the pill, the file,
+lighter than phanspeed's — but keeping one chokepoint means the pill, the file,
 and the CLI all share exactly one set of invariants.
 
 Adding a config field (checklist):

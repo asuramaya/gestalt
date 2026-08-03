@@ -79,7 +79,7 @@ Never tagged. `packaging/VERSION` currently reads what the file itself says (che
 this doc doesn't duplicate the single source of truth). `packaging/release-signing/allowed_signers`
 ships empty right now, correctly — the ceremony (step 2 above) simply hasn't happened yet. It stays
 that way until the operator arms it, and **arming happens before the first tag, not after**: unlike
-RAMstein's v0.9.0 (armed one commit after an already-published unsigned tag, safe only because no
+ramstein's v0.9.0 (armed one commit after an already-published unsigned tag, safe only because no
 installed base existed yet to brick), gestalt's `release.yml` won't let a tag through with an empty
 anchor at all, so there is no unarmed-first-release exception here to begin with.
 

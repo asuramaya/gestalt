@@ -10,7 +10,7 @@ Gestalt is the family's **input/HCI demon**: a hands-free pointer for GNOME — 
 the cursor with your head, click with a pinch, driven from a Quick Settings pill
 ("look to target, pinch to act," Apple-Vision-Pro-style, on Linux). Where the five
 resource-governors rule *machine* state (coldspot=net, phanspeed=power, byebyte=bytes
-at rest, RAMstein=bytes alive, kast=cast paths), gestalt rules the *cursor* — reading
+at rest, ramstein=bytes alive, kast=cast paths), gestalt rules the *cursor* — reading
 a camera and driving uinput. That domain forces one structural divergence the rest of
 this audit turns on: **gestaltd is a user-session daemon, not a root system daemon.**
 Its privilege is group-based device access (video for the camera, input for uinput),
@@ -24,7 +24,7 @@ foundation / pre-alpha (v0.2.0).
 |---|---|---|
 | daemon owns truth | **✓** | `gestaltd` owns head-track→cursor truth; `status.json` is the seed the pill/CLI read, never the master. |
 | verb CLI over socket | **✓** | `bin/gestaltctl` — verbs: arm, disarm, recenter, mode, set, record, diag, reset, status. Sends JSON over the control socket; never sudos. |
-| socket doctrine | **domain-shaped** | AF_UNIX + newline-JSON + hostile-input→`{"ok":false,"error":…}` (never a crash) all ✓. **SO_PEERCRED / mode-0660 / world-reach are moot by domain**: the socket lives in `$XDG_RUNTIME_DIR/gestalt/` (user-private 0700), not a root daemon's world-reachable path. `gestalt/ipc.py` documents this exemption in-code ("Unlike PhanSpeed…"). |
+| socket doctrine | **domain-shaped** | AF_UNIX + newline-JSON + hostile-input→`{"ok":false,"error":…}` (never a crash) all ✓. **SO_PEERCRED / mode-0660 / world-reach are moot by domain**: the socket lives in `$XDG_RUNTIME_DIR/gestalt/` (user-private 0700), not a root daemon's world-reachable path. `gestalt/ipc.py` documents this exemption in-code ("Unlike phanspeed…"). |
 | status.json seam | **✓** | Atomic tmp-then-`os.replace` in `ipc.py`, `gestaltd`, and the cursor file in `engine.py`. 0640 is moot — it's under the user-private runtime dir. |
 | config = seed, typed/clamped | **✓** | `tests/test_config.py` covers typed/clamped load. |
 | failsafe invariant compiled-in | **✓ (domain-perfect)** | The family's cool>quiet analog: **"the pointer is always killable by keyboard."** A global kill-hotkey + `systemctl --user stop` SIGKILLs the whole cgroup, the kernel tears down the uinput device, any held click releases. Reachable precisely when the pointer itself can't be trusted to land on a menu. |
