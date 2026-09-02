@@ -9,6 +9,29 @@
 # to /dev/uinput (skip it if uinput is already world-writable on your box).
 set -euo pipefail
 
+# ---- refuse root, checked FIRST, before any download --------------------
+# gestaltd runs as the USER (see the header above) and every step below
+# writes to $HOME/$XDG_CONFIG_HOME — under sudo that's root's home, not the
+# human's. Nothing downstream re-checks this, so an unguarded `sudo
+# ./install.sh` builds a complete, working gestalt into /root and only fails
+# at the very last `systemctl --user` call (no session bus for root) --
+# incidental, not designed, and if that one command ever succeeded this
+# would report SUCCESS while gestalt lived somewhere the operator never
+# opens (found for real: msg 6416). Fail fast and plainly instead.
+if [[ $EUID -eq 0 ]]; then
+  cat >&2 <<'EOF'
+gestalt installs as a per-user service (your webcam, /dev/uinput via a
+group, and a session overlay — none of which need root) and writes to your
+own $HOME. Run it as yourself, not under sudo:
+
+  ./install.sh
+
+(the one optional root step — the udev rule for /dev/uinput — prompts for
+sudo on its own, only for that one command)
+EOF
+  exit 1
+fi
+
 REPO="asuramaya/gestalt"
 # principal = WHO (the repo's stable identity); namespace = WHAT-FOR (what
 # this signature authorizes). Never conflate the two — see RELEASE.md.
@@ -119,15 +142,20 @@ EOF
 [[ -f "$SRC/src/bin/gestaltd" ]] || bootstrap_from_release "$@"
 
 PREFIX="$HOME/.local/share/gestalt"
-EXT_UUID="gestalt@asuramaya"
-EXT_DIR="$HOME/.local/share/gnome-shell/extensions/$EXT_UUID"
 CFG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/gestalt"
 
 echo "== Gestalt installer =="
 
 # 1. bundled venv (pinned Python 3.12 — mediapipe/opencv have no 3.13+/3.14 wheels)
 if ! command -v uv >/dev/null 2>&1; then
-  echo "!! 'uv' is required (https://docs.astral.sh/uv/). Install it and re-run."
+  # "not found on PATH" is what this check actually proved; "not installed"
+  # would be a diagnosis it can't back — uv can be installed and simply
+  # invisible from here (a non-login shell, a different $PATH). Found for
+  # real under sudo, where uv lived in the human's ~/.local/bin, off root's
+  # PATH entirely (msg 6416) — "install it" sent that reader to reinstall a
+  # thing that was already there.
+  echo "!! 'uv' not found on PATH (https://docs.astral.sh/uv/). Install it, or" \
+       "add it to PATH if it's already installed elsewhere, and re-run."
   exit 1
 fi
 echo "-- building venv -> $PREFIX/venv (Python 3.12 via uv)"
@@ -204,19 +232,9 @@ systemctl --user daemon-reload
 systemctl --user enable --now gestalt.service || \
   echo "   (will start on next login)"
 
-# 6. GNOME Shell extension
-echo "-- installing Quick Settings pill -> $EXT_DIR"
-mkdir -p "$EXT_DIR/schemas"
-cp "$SRC/src/extension/$EXT_UUID/metadata.json" "$SRC/src/extension/$EXT_UUID/extension.js" "$EXT_DIR/"
-# pill.js is vendored (src/share/gestalt/lib's sibling commons) but not yet
-# imported by extension.js — deliberately not installed until it's wired in.
-# The panic-kill keyboard shortcut is a GSettings key — compile its schema into
-# the extension dir so getSettings()/addKeybinding() can read it.
-cp "$SRC/src/extension/$EXT_UUID/schemas/"*.gschema.xml "$EXT_DIR/schemas/"
-glib-compile-schemas "$EXT_DIR/schemas"
-gnome-extensions enable "$EXT_UUID" 2>/dev/null \
-  && echo "   enabled" \
-  || echo "   (enable on next login: gnome-extensions enable $EXT_UUID)"
+# 6. GNOME Shell extension — shared with `make pill` (packaging/install-pill.sh)
+# so re-staging just the extension never drifts from what a full install does.
+bash "$SRC/packaging/install-pill.sh" "$SRC"
 
 # 7. enable the AT-SPI accessibility bus — Gestalt's primary target source. Without
 # this, apps publish no widget tree and magnetism has nothing to snap to.

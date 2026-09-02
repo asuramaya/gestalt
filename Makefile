@@ -1,23 +1,38 @@
 # Gestalt — common tasks. Run `make help` for the list.
 .PHONY: help install uninstall lint test check check-py check-shell check-js \
-        check-pill-js check-vendored-path-all check-repo sync-signers pack clean
+        check-repo sync-signers pill pack clean
 
 EXT := src/extension/gestalt@asuramaya
 
 # The family's shared recipe layer (sutra.mk, vendored like code under its
 # own .version/.commit anchor — see docs/BOOTSTRAP.md and the file's own
-# header). Supplies check-sutra (integrity+freshness for the three vendored
-# .py modules), SUTRA_ROOT_ROWS (the canonical tracked-files row count used
-# below in check-repo), and check-vendored-path (the checkout-run resolution
-# guard). PILL must be set before the include; everything else in sutra.mk
-# resolves relative to its own vendored location, not this Makefile's.
+# header). Supplies check-sutra (integrity+freshness, including pill.js when
+# SUTRA_EXT_DIR is set — 0.12.9 folds what used to be gestalt's own hand-
+# rolled check-pill-js target), SUTRA_ROOT_ROWS (the canonical tracked-files
+# row count used below in check-repo), and check-vendored-path[-all] (the
+# checkout-run resolution guard; SUTRA_CHECK_BINS is the native form of what
+# used to be a second hand-rolled target here — both pilot supplements
+# deleted on this re-vendor, per the thread that predicted this the day they
+# were written: threads/2cd969c4). PILL, SUTRA_EXT_DIR and SUTRA_CHECK_BINS
+# must all be set before the include; everything else in sutra.mk resolves
+# relative to its own vendored location, not this Makefile's.
 PILL := gestalt
+SUTRA_EXT_DIR := $(EXT)
+# gestaltctl is safe to run for real (a refused socket connect, no hardware
+# touched); gestaltd is NOT wired in here: it has no --help/no-op invocation
+# today, only Daemon().start() -- running it for real would open the camera
+# and grab uinput, which has no place in a static check. Left as a follow-up
+# (needs a real --help flag on gestaltd first) rather than silently skipped
+# -- see docs/ARCHITECTURE.md's exemptions table.
+SUTRA_CHECK_BINS := src/bin/gestaltctl
+SUTRA_CHECK_ARGS := status
 include src/share/gestalt/lib/sutra.mk
 
 help:
 	@echo "Gestalt targets:"
 	@echo "  make install    install daemon (uv venv) + user service + pill"
 	@echo "  make uninstall  remove everything"
+	@echo "  make pill       (re)stage the GNOME extension only — no venv rebuild"
 	@echo "  make check      run all static checks (CI-equivalent)"
 	@echo "  make lint       ruff + shellcheck"
 	@echo "  make test       hardware-free tests (config fuzz + endpoint predictor)"
@@ -30,64 +45,23 @@ install:
 uninstall:
 	./uninstall.sh
 
+# gestalt is the only pill where the extension is installed by install.sh
+# rather than as its own separate root-vs-user split (ramstein/coldspot/
+# byebyte/phanspeed's `make pill` exists because their daemon install is
+# root and the pill install can't be, so it never runs there) — gestalt's
+# whole install is already a per-user step, so this is a genuine re-stage
+# shortcut rather than a load-bearing separate path: same script install.sh
+# itself calls, so the two can't drift into two different "how to install
+# the pill" answers. Never needs sudo.
+pill:
+	bash packaging/install-pill.sh .
+
 lint: check-py check-shell
 
 test:
 	python3 tests/test_config.py
 	python3 tests/test_endpoint.py
 	python3 tests/test_resolve.py
-
-# sutra.mk's check-sutra covers only the three vendored .py modules —
-# BOOTSTRAP.md's own escape hatch for a pill that also vendors pill.js
-# ("extend the for mod in... line") never made it into sutra.mk's
-# generalized form (same gap ramstein documents). Kept here as a small
-# pill-side supplement, same integrity+freshness shape as check-sutra.
-# pill.js is vendored but NOT YET wired into extension.js — hygiene only,
-# no extension behavior change this pass.
-check-pill-js:
-	@f="$(EXT)/pill.js"; ver="$${f%.js}.version"; cmt="$${f%.js}.commit"; \
-	sha=$$(awk '{print $$NF}' "$$ver"); \
-	actual=$$(sha256sum "$$f" | cut -d' ' -f1); \
-	if [ "$$sha" != "$$actual" ]; then \
-	    echo "check-pill-js FAIL: $$f doesn't match $$ver" \
-	         "(hand-edited? re-vendor: bash ~/code/REPOS/sutra/vendor.sh src/share/gestalt/lib $(EXT) --bootstrap=gestalt)"; \
-	    exit 1; \
-	fi; \
-	echo "check-pill-js: integrity ok ($$f, sha256 $$sha)"; \
-	canon="$$HOME/code/REPOS/sutra"; \
-	if [ -d "$$canon/.git" ]; then \
-	    if [ ! -f "$$cmt" ]; then \
-	        echo "check-pill-js: freshness unknown ($$f has no .commit anchor, an older vendor)"; \
-	    else \
-	        recorded=$$(cat "$$cmt"); \
-	        filehead=$$(git -C "$$canon" log -1 --format=%H -- pill.js); \
-	        if git -C "$$canon" merge-base --is-ancestor "$$filehead" "$$recorded" 2>/dev/null; then \
-	            echo "check-pill-js: freshness ok (vendored from $$recorded, at or after its own head $$filehead)"; \
-	        elif git -C "$$canon" merge-base --is-ancestor "$$recorded" "$$filehead" 2>/dev/null; then \
-	            echo "check-pill-js: LAG (vendored from $$recorded, canonical has since moved to" \
-	                 "$$filehead) -- warn, not a failure"; \
-	        else \
-	            echo "check-pill-js FAIL: DRIFT ($$f's vendored commit $$recorded is not in" \
-	                 "canonical's history at $$canon) -- re-vendor"; \
-	            exit 1; \
-	        fi; \
-	    fi; \
-	else \
-	    echo "check-pill-js: canonical sutra checkout not present, freshness skipped"; \
-	fi
-
-# sutra.mk's check-vendored-path validates one SUTRA_CHECK_BIN per
-# invocation by actually running it. gestaltctl is safe to run for real (a
-# refused socket connect, no hardware touched) so it gets sutra.mk's own
-# default recipe below with an explicit safe arg. gestaltd is NOT wired in
-# here: it has no --help/no-op invocation today, only Daemon().start() —
-# running it for real would open the camera and grab uinput, which has no
-# place in a static check. Left as a follow-up (needs a real --help flag on
-# gestaltd first, a CLI-surface change outside this pass's hygiene-only
-# scope) rather than silently skipped — see docs/ARCHITECTURE.md's
-# exemptions table.
-check-vendored-path-all:
-	@$(MAKE) check-vendored-path SUTRA_CHECK_BIN=src/bin/gestaltctl SUTRA_CHECK_ARGS=status
 
 # rebuild packaging/release-signing/allowed_signers from the canonical keys
 # (see docs/RELEASE-SIGNING.md — do NOT run casually; arm strictly BEFORE
@@ -108,15 +82,15 @@ check-py: test
 # flag, so exclusions are passed inline instead of via a config file (no
 # shellcheckrc, anywhere — REPO-STANDARD.md §3). None excluded today.
 check-shell:
-	bash -n install.sh uninstall.sh packaging/sync-signers.sh
-	shellcheck install.sh uninstall.sh packaging/sync-signers.sh
+	bash -n install.sh uninstall.sh packaging/sync-signers.sh packaging/install-pill.sh
+	shellcheck install.sh uninstall.sh packaging/sync-signers.sh packaging/install-pill.sh
 
 check-js:
 	node --check "$(EXT)/extension.js"
 	python3 -c "import json; json.load(open('$(EXT)/metadata.json'))"
 
 # static checks, CI-equivalent. Family grammar: check.
-check: check-py check-shell check-js check-sutra check-pill-js check-vendored-path-all check-repo
+check: check-py check-shell check-js check-sutra check-vendored-path-all check-repo
 	@echo "all static checks passed"
 
 # The family's structural gate (REPO-STANDARD.md §5), mechanical only: it

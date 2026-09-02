@@ -17,11 +17,11 @@ jobs:
       - name: Repo structure gate (REPO-STANDARD.md)
         run: make check-repo
 
-      - name: check-sutra (vendored commons integrity)
+      # Covers pill.js too now (SUTRA_EXT_DIR, sutra 0.12.9) -- folded the
+      # standalone check-pill-js step that used to sit here; the hand-rolled
+      # Makefile target it called no longer exists.
+      - name: check-sutra (vendored commons + extension integrity)
         run: make check-sutra
-
-      - name: check-pill-js (vendored extension commons integrity)
-        run: make check-pill-js
 
       - name: check-vendored-path (gestaltctl resolves the checkout's own sutra)
         run: make check-vendored-path-all

@@ -9,3 +9,5 @@ venv/
 # local Claude Code / MCP tooling config — machine-specific, not project code
 .claude/
 .mcp.json
+# Osiris project-pinning marker — machine-local identity cache, not project code
+.osiris
