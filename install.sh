@@ -211,10 +211,17 @@ if [[ ! -f "$CFG_DIR/config.json" ]]; then
 fi
 
 # 4. optional udev rule for /dev/uinput (root). Skip if already accessible.
+# `-w` is true only when the node exists AND we can write it -- it reads the
+# same false whether uinput is unloaded entirely (no node yet) or loaded but
+# permissioned to someone else. Both get the identical remedy below though:
+# `static_node=uinput` is udev's own mechanism for creating the node (and
+# triggering the kernel module load) on `udevadm trigger`, not just fixing
+# permissions on one that already exists -- so the one branch is correct for
+# both cases, not just imprecisely worded for one of them.
 if [[ -w /dev/uinput ]]; then
   echo "-- /dev/uinput already writable; skipping udev rule"
 else
-  echo "-- /dev/uinput needs access; installing udev rule (sudo)"
+  echo "-- /dev/uinput needs a udev rule (missing, or present but not yet accessible) — installing (sudo)"
   sudo tee /etc/udev/rules.d/60-gestalt-uinput.rules >/dev/null <<'RULE'
 KERNEL=="uinput", GROUP="input", MODE="0660", OPTIONS+="static_node=uinput"
 RULE
@@ -229,8 +236,26 @@ echo "-- installing user service"
 mkdir -p "$HOME/.config/systemd/user"
 cp "$SRC/src/data/systemd/user/gestalt.service" "$HOME/.config/systemd/user/gestalt.service"
 systemctl --user daemon-reload
-systemctl --user enable --now gestalt.service || \
-  echo "   (will start on next login)"
+# The one failure this is meant to catch is a genuinely absent session bus
+# (no graphical login yet — e.g. a scripted/first-boot install) -- systemd's
+# own text for that is stable and specific ("Failed to connect to ... bus").
+# Anything else (a real service-definition or dependency problem) used to
+# print the SAME reassuring "will start on next login" and let this script
+# reach "== done ==" regardless -- the exact shape that would have reported
+# SUCCESS for a full /root install that only failed here (msg 6416). Stop
+# and say so plainly instead of guessing every failure is the benign one.
+_svc_err="$(mktemp)"
+if ! systemctl --user enable --now gestalt.service 2>"$_svc_err"; then
+  if grep -qE 'Failed to connect to.*bus' "$_svc_err"; then
+    echo "   (no session bus reachable here — will start on next login)"
+  else
+    echo "!! systemctl --user enable --now gestalt.service failed:" >&2
+    cat "$_svc_err" >&2
+    rm -f "$_svc_err"
+    exit 1
+  fi
+fi
+rm -f "$_svc_err"
 
 # 6. GNOME Shell extension — shared with `make pill` (packaging/install-pill.sh)
 # so re-staging just the extension never drifts from what a full install does.

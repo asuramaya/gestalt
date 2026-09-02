@@ -240,6 +240,11 @@ class Daemon:
             "pitch_deg": round(f.pitch_deg, 1) if f else 0.0,
             "yaw_deg": round(f.yaw_deg, 1) if f else 0.0,
             "targets": f.target_count if f else 0,
+            # per-provider liveness (dead/corrupt/starting/ok) -- so "targets"
+            # reading low has a distinguishable cause from "a provider died
+            # and its silence looks identical to the room being quiet" (see
+            # gestalt.targets.registry.Registry.status())
+            "providers": (self.engine.provider_status() if self.engine else {}),
             "snap": f.snap_role if f else None,
             "hand": bool(f and f.hand_present),
             "pinch": (f.pinch if f and f.pinch else {}),

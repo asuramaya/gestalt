@@ -86,6 +86,31 @@ def merge_provider_files(files: dict[str, str]) -> list[dict]:
     return merged
 
 
+def provider_health(files: dict[str, str]) -> dict[str, str]:
+    """Classify each provider's file, read-side only: 'ok' (parses, has a
+    'targets' list — whatever it currently reports, even zero, is a real
+    finding), 'missing' (no file yet — a startup race if the process is
+    alive, or nothing wrote one), or 'corrupt' (exists but isn't valid JSON,
+    or has no 'targets' list — a real bug, not silence). This alone can't
+    tell 'missing because still starting' from 'missing because the writer
+    died' — that needs the process handle, which a stateless reader (the MCP
+    server) never has; see Registry.status() for the combined picture a
+    process owner can give."""
+    out: dict[str, str] = {}
+    for name, path in files.items():
+        try:
+            with open(path) as f:
+                doc = json.load(f)
+        except OSError:
+            out[name] = "missing"
+            continue
+        except ValueError:
+            out[name] = "corrupt"
+            continue
+        out[name] = "ok" if isinstance(doc.get("targets"), list) else "corrupt"
+    return out
+
+
 class Registry:
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -107,15 +132,59 @@ class Registry:
             out = os.path.join(tdir, f"{name}.json")
             self._files[name] = out
             try:
+                # stderr NOT discarded (used to be DEVNULL): both providers
+                # already write a real diagnostic there on every poll failure
+                # before falling back to an empty targets file — throwing
+                # that away is what let a dead/erroring provider read
+                # identically to one legitimately finding nothing. Inheriting
+                # gestaltd's own stderr sends it to the same place gestaltd's
+                # own errors go (the user service's journal); a provider
+                # that's actually broken errors rarely (a D-Bus/camera fault,
+                # not every poll), so this isn't the routine-noise class of
+                # caveat the family has ruled against — journald's own rate
+                # limiting is the backstop if a provider ever loops hot.
                 self._procs[name] = subprocess.Popen(
                     [interp, os.path.join(PROVIDERS_DIR, script), out],
-                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    env=env, stdout=subprocess.DEVNULL)
             except Exception as e:
                 sys.stderr.write(f"[targets] provider {name} failed to start: {e}\n")
 
     def read(self) -> list[dict]:
         """Merge every provider's current boxes (see merge_provider_files)."""
         return merge_provider_files(self._files)
+
+    def alive(self) -> dict[str, bool]:
+        """Is each spawned provider subprocess still running? False means the
+        process actually exited — crashed, killed, whatever — as opposed to
+        merely not having written its first poll yet."""
+        return {name: (p.poll() is None) for name, p in self._procs.items()}
+
+    def status(self) -> dict[str, str]:
+        """One state per configured provider, combining process liveness
+        with what its file says — the three states merge_provider_files
+        collapses (missing / corrupt / genuinely-empty) get distinct
+        renderings here instead of sharing one:
+          'dead'     — the process exited; do not read its silence as "found
+                        nothing", it isn't reporting anything anymore
+          'corrupt'  — file exists but doesn't parse or has no targets list —
+                        a real bug in the provider or a torn write, not "quiet"
+          'starting' — process alive, hasn't written its first poll yet
+          'ok'       — file present and parses; whatever target count it
+                        currently reports is a genuine reading, zero included
+        """
+        alive = self.alive()
+        health = provider_health(self._files)
+        out: dict[str, str] = {}
+        for name in self._files:
+            if not alive.get(name, False):
+                out[name] = "dead"
+            elif health.get(name) == "corrupt":
+                out[name] = "corrupt"
+            elif health.get(name) == "missing":
+                out[name] = "starting"
+            else:
+                out[name] = "ok"
+        return out
 
     def apply_config(self, cfg: dict):
         # provider set changes need a restart; the daemon handles that on `set`.

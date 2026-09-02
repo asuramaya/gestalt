@@ -680,6 +680,14 @@ class Engine:
         if self._targets:
             (self._targets.pause if idle else self._targets.resume)()
 
+    def provider_status(self) -> dict[str, str]:
+        """Per-provider liveness ('dead'/'corrupt'/'starting'/'ok') — see
+        Registry.status(). A dead or corrupt provider means the pipeline's
+        target count is UNDER-reporting for a real reason, not that the room
+        is genuinely quiet; status() surfaces this so that distinction is
+        visible instead of silently folded into a lower number."""
+        return self._targets.status() if self._targets else {}
+
     def apply_config(self, cfg: dict):
         old_cam = {k: self.cfg.get(k) for k in ("camera", "cam_width", "cam_height", "cam_fps")}
         old_hand = {k: self.cfg.get(k)
